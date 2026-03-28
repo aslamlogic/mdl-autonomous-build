@@ -32,10 +32,7 @@ fastapi
 uvicorn
 EOF
 
-      - name: Commit build
+      - name: Confirm build
         run: |
-          git config --global user.name "bot"
-          git config --global user.email "bot@test.com"
-          git add .
-          git commit -m "build step" || echo "no changes"
-          git push
+          echo "Files created:"
+          ls -la

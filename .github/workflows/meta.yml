@@ -23,8 +23,7 @@ jobs:
           if [ "$FRAMEWORK" = "fastapi" ]; then
             mkdir -p app
 
-            cat <<EOF > app/main.py
-from fastapi import FastAPI
+            echo 'from fastapi import FastAPI
 
 app = FastAPI()
 
@@ -34,8 +33,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
-EOF
+    return {"status": "ok"}' > app/main.py
           fi
 
       - name: Commit generated code

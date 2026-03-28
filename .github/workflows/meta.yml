@@ -6,12 +6,12 @@ on:
       - 'specs/**'
 
 jobs:
-  test-run:
+  run-devbox:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Debug trigger
-        run: echo "Pipeline triggered successfully"
+      - name: Debug
+        run: echo "Pipeline working"

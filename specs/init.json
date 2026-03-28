@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "project": {
+    "project_id": "meta-dev-001",
+    "name": "Meta Dev Launcher",
+    "slug": "meta-dev-launcher",
+    "owner": "aslamlogic",
+    "description": "Autonomous system ignition"
+  },
+  "repository": {
+    "provider": "github",
+    "name": "aslamlogic/meta-dev-launcher",
+    "default_branch": "main",
+    "root_path": "."
+  },
+  "application": {
+    "type": "fastapi",
+    "runtime": "python3.12",
+    "entrypoint": "main.py",
+    "module_name": "main:app",
+    "health_endpoint": "/health",
+    "docs_endpoint": "/docs",
+    "host": "0.0.0.0",
+    "port_env_var": "PORT"
+  },
+  "deployment_module": {
+    "source_path": "modules/deployment-control-layer",
+    "deploy_command": "python deploy.py full",
+    "preserve_unchanged": true
+  },
+  "generation": {
+    "system_prompt_id": "paios-fastapi-minimal-v1",
+    "temperature": 0,
+    "max_output_files": 2,
+    "required_files": ["main.py", "requirements.txt"],
+    "forbidden_files": [],
+    "overwrite_allowed": true
+  },
+  "validation": {
+    "required_states": ["S0","S1","S2","S3","S4","S5","S6","S7"],
+    "required_python_packages": ["fastapi","uvicorn","requests"],
+    "required_endpoints": ["/health","/docs"],
+    "git_clean_after_commit": true
+  }
+}

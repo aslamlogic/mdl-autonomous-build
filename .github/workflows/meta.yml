@@ -1,0 +1,14 @@
+name: Meta Dev Launcher
+
+on:
+  push:
+    paths:
+      - 'specs/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "TRIGGER WORKING"

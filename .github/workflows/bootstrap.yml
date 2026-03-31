@@ -12,68 +12,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install engine files
+      - name: Install engine
         run: |
           mkdir -p engine
 
-          echo 'import json
-from generator import generate_system
-from writer import write_files
+          printf "import json\nfrom generator import generate_system\nfrom writer import write_files\n\ndef load_spec():\n    with open('specs/init.json','r') as f:\n        return json.load(f)\n\ndef main():\n    spec = load_spec()\n    files = generate_system(spec)\n    write_files(files)\n\nif __name__ == '__main__':\n    main()\n" > engine/runner.py
 
-def load_spec():
-    with open("specs/init.json", "r") as f:
-        return json.load(f)
+          printf "from claude_client import call_claude\n\ndef generate_system(spec):\n    return call_claude(str(spec))['files']\n" > engine/generator.py
 
-def main():
-    spec = load_spec()
-    files = generate_system(spec)
-    write_files(files)
+          printf "import os\n\ndef write_files(files):\n    for f in files:\n        os.makedirs(os.path.dirname(f['path']), exist_ok=True)\n        with open(f['path'],'w') as file:\n            file.write(f['content'])\n" > engine/writer.py
 
-if __name__ == "__main__":
-    main()
-' > engine/runner.py
-
-          echo 'from claude_client import call_claude
-
-def build_prompt(spec):
-    return f"""
-Return JSON:
-{{"files":[{{"path":"file","content":"code"}}]}}
-Spec:
-{spec}
-"""
-
-def generate_system(spec):
-    return call_claude(build_prompt(spec))["files"]
-' > engine/generator.py
-
-          echo 'import os
-
-def write_files(files):
-    for f in files:
-        os.makedirs(os.path.dirname(f["path"]), exist_ok=True)
-        with open(f["path"], "w") as file:
-            file.write(f["content"])
-' > engine/writer.py
-
-          echo 'import os, requests, json
-
-def call_claude(prompt):
-    r = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": os.getenv("CLAUDE_API_KEY"),
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        },
-        json={
-            "model": "claude-3-5-sonnet-20240620",
-            "max_tokens": 2000,
-            "messages": [{"role":"user","content":prompt}]
-        }
-    )
-    return json.loads(r.json()["content"][0]["text"])
-' > engine/claude_client.py
+          printf "import os,requests,json\n\ndef call_claude(prompt):\n    r=requests.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.getenv('CLAUDE_API_KEY'),'anthropic-version':'2023-06-01','content-type':'application/json'},json={'model':'claude-3-5-sonnet-20240620','max_tokens':2000,'messages':[{'role':'user','content':prompt}]})\n    return json.loads(r.json()['content'][0]['text'])\n" > engine/claude_client.py
 
       - name: Install deps
         run: pip install requests
@@ -83,10 +32,10 @@ def call_claude(prompt):
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: python engine/runner.py
 
-      - name: Commit results
+      - name: Commit
         run: |
           git config user.name "mbh-bot"
           git config user.email "bot@mbh.ai"
           git add .
-          git commit -m "MBH bootstrap install" || echo "No changes"
+          git commit -m "bootstrap install" || echo "No changes"
           git push

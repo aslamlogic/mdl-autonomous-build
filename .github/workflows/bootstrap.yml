@@ -3,86 +3,16 @@ name: Bootstrap MBH
 on:
   push:
     paths:
-      - 'specs/**'
+      - "specs/**"
 
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install engine
-        run: |
-          mkdir -p engine
-
-          echo "import json
-from generator import generate_system
-from writer import write_files
-
-def load_spec():
-    with open('specs/init.json','r') as f:
-        return json.load(f)
-
-def main():
-    spec = load_spec()
-    files = generate_system(spec)
-    write_files(files)
-
-if __name__ == '__main__':
-    main()
-" > engine/runner.py
-
-          echo "from claude_client import call_claude
-
-def generate_system(spec):
-    return call_claude(str(spec)).get('files',[])
-" > engine/generator.py
-
-          echo "import os
-
-def write_files(files):
-    for f in files:
-        os.makedirs(os.path.dirname(f['path']), exist_ok=True)
-        with open(f['path'],'w') as file:
-            file.write(f['content'])
-" > engine/writer.py
-
-          echo "import os,requests,json
-
-def call_claude(prompt):
-    r = requests.post(
-        'https://api.anthropic.com/v1/messages',
-        headers={
-            'x-api-key': os.getenv('CLAUDE_API_KEY'),
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json'
-        },
-        json={
-            'model': 'claude-3-5-sonnet-20240620',
-            'max_tokens': 2000,
-            'messages': [{'role':'user','content':prompt}]
-        }
-    )
-
-    try:
-        data = r.json()
-        if 'content' in data:
-            text = data['content'][0].get('text','')
-            return json.loads(text)
-    except:
-        pass
-
-    return {'files': []}
-" > engine/claude_client.py
-
       - name: Install deps
         run: pip install requests
-
-      - name: Run engine
+      - name: Run bootstrap
         env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-        run: python engine/runner.py
-
-      - name: Done
-        run: echo "bootstrap complete"
+          CLAUDE_API_KEY: "${{ secrets.CLAUDE_API_KEY }}"
+        run: python engine/bootstrap.py

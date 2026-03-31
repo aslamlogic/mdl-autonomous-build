@@ -1,0 +1,27 @@
+{
+  "target": "meta-system",
+  "objective": "Create an orchestrator that builds apps and deploys them automatically.",
+  "orchestrator": {
+    "entrypoint": "meta_system/orchestrator.py",
+    "modules": [
+      "meta_system/spec_loader.py",
+      "meta_system/app_builder.py",
+      "meta_system/engine_builder.py",
+      "meta_system/deployer.py",
+      "meta_system/executor.py"
+    ]
+  },
+  "inputs": {
+    "app_specs_dir": "specs/apps/"
+  },
+  "rules": {
+    "no_workflow_modification": true,
+    "use_existing_bootstrap": true,
+    "multi_app_support": true,
+    "parallel_execution": true
+  },
+  "outputs": {
+    "meta_system_dir": "meta_system/",
+    "apps_dir": "apps/"
+  }
+}

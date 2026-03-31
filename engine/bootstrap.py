@@ -1,10 +1,9 @@
 import os
 import sys
 import json
-import re
 import requests
 
-API_URL = "https://api.anthropic.com/v1/messages"
+API_URL = "https://api.openai.com/v1/responses"
 
 
 def fail(msg):
@@ -12,79 +11,51 @@ def fail(msg):
     sys.exit(1)
 
 
-def extract_json(text):
-    text = text.strip()
-
-    try:
-        return json.loads(text)
-    except:
-        pass
-
-    blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    for b in blocks:
-        try:
-            return json.loads(b.strip())
-        except:
-            pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1:
-        try:
-            return json.loads(text[start:end + 1])
-        except:
-            pass
-
-    return None
-
-
-def call_claude(prompt):
-    api_key = os.getenv("CLAUDE_API_KEY")
+def call_openai(prompt):
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        fail("ERROR: CLAUDE_API_KEY not set")
+        fail("ERROR: OPENAI_API_KEY not set")
 
     response = requests.post(
         API_URL,
         headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
         },
         json={
-            "model": "claude-3-haiku-20240307",
-            "max_tokens": 4000,
-            "messages": [{"role": "user", "content": prompt}]
+            "model": "gpt-5.4-mini",
+            "input": [
+                {
+                    "role": "system",
+                    "content": "Return ONLY valid JSON. No explanation."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
         },
         timeout=60
     )
 
     if response.status_code != 200:
-        fail(f"Claude API error: {response.text}")
+        fail(f"OpenAI API error: {response.text}")
+
+    data = response.json()
 
     try:
-        data = response.json()
-    except Exception as e:
-        fail(f"Invalid JSON response: {e}")
-
-    try:
-        content = data["content"]
-        text = ""
-        for block in content:
-            if isinstance(block, dict) and "text" in block:
-                text += block["text"]
+        text = data["output"][0]["content"][0]["text"]
     except Exception:
-        fail("Unexpected Anthropic response format")
+        fail("Unexpected OpenAI response format")
 
-    print("===== CLAUDE RAW OUTPUT =====")
+    print("===== OPENAI RAW OUTPUT =====")
     print(text)
     print("===== END OUTPUT =====")
 
-    parsed = extract_json(text)
-
-    if not parsed:
-        fail("Failed to parse JSON from Claude output")
-
-    return parsed
+    try:
+        return json.loads(text)
+    except Exception:
+        fail("Failed to parse JSON from model output")
 
 
 def main():
@@ -94,9 +65,9 @@ def main():
     except Exception as e:
         fail(f"Spec load error: {e}")
 
-    prompt = f"""You are an expert software engineer.
+    prompt = f"""Generate files from this specification.
 
-Return ONLY valid JSON in this structure:
+Return ONLY JSON in this format:
 
 {{
   "files": [
@@ -111,7 +82,7 @@ Specification:
 {json.dumps(spec)}
 """
 
-    result = call_claude(prompt)
+    result = call_openai(prompt)
 
     files = result.get("files")
     if not isinstance(files, list) or not files:

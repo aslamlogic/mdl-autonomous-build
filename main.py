@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 app = FastAPI(title="meta-dev", version="14")
 
@@ -10,4 +11,4 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy"}
+    return JSONResponse({"status": "healthy"})

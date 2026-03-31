@@ -1,15 +1,18 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Dict
 
+from .executor import TaskExecutor
+
 
 class EngineBuilder:
-    def __init__(self, meta_dir: str = "meta_system/"):
-        self.meta_dir = Path(meta_dir)
-        self.meta_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, executor: TaskExecutor) -> None:
+        self.executor = executor
 
-    def build(self, spec: Dict[str, Any]) -> str:
-        name = spec.get("name") or "engine"
-        engine_dir = self.meta_dir / "engines" / name
-        engine_dir.mkdir(parents=True, exist_ok=True)
-        (engine_dir / "engine.txt").write_text(f"Engine prepared for: {name}\n", encoding="utf-8")
-        return str(engine_dir)
+    def build_engine(self, spec: Dict[str, Any], app_dir: Path) -> Dict[str, Any]:
+        app_dir.mkdir(parents=True, exist_ok=True)
+        engine_file = app_dir / "engine.json"
+        payload = {"app": spec.get("name", "unknown"), "engine": spec.get("engine", "default")}
+        engine_file.write_text(__import__("json").dumps(payload, indent=2), encoding="utf-8")
+        return {"engine_file": str(engine_file), "status": "built"}

@@ -1,15 +1,25 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
 from typing import Any, Dict
 
+from .executor import TaskExecutor
+from .engine_builder import EngineBuilder
+
 
 class AppBuilder:
-    def __init__(self, apps_dir: str = "apps/"):
-        self.apps_dir = Path(apps_dir)
-        self.apps_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, executor: TaskExecutor, engine_builder: EngineBuilder, apps_dir: Path) -> None:
+        self.executor = executor
+        self.engine_builder = engine_builder
+        self.apps_dir = apps_dir
 
-    def build(self, spec: Dict[str, Any]) -> str:
-        name = spec.get("name") or "app"
-        app_dir = self.apps_dir / name
+    def build(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        app_name = spec.get("name", "unnamed_app")
+        app_dir = self.apps_dir / app_name
         app_dir.mkdir(parents=True, exist_ok=True)
-        (app_dir / "build.txt").write_text(f"Built app: {name}\n", encoding="utf-8")
-        return str(app_dir)
+        build_file = app_dir / "build.json"
+        engine_result = self.engine_builder.build_engine(spec, app_dir)
+        build_payload = {"app": app_name, "spec": spec, "engine": engine_result}
+        build_file.write_text(json.dumps(build_payload, indent=2), encoding="utf-8")
+        return {"build_file": str(build_file), "app_dir": str(app_dir), "status": "built", "engine": engine_result}

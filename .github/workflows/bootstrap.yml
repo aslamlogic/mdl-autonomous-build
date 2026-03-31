@@ -1,257 +1,44 @@
-import os
-import sys
-import json
-import re
-import requests
-
-API_URL = "https://api.anthropic.com/v1/messages"
-REQUEST_TIMEOUT_SECONDS = 60
-
-
-def fail(message):
-    print(message)
-    sys.exit(1)
-
-
-def load_spec(path="specs/init.json"):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        fail(f"ERROR: Spec file not found: {path}")
-    except json.JSONDecodeError as e:
-        fail(f"ERROR: Spec JSON invalid: {e}")
-
-
-def get_candidate_models():
-    models_env = os.getenv("ANTHROPIC_MODELS", "").strip()
-    if models_env:
-        models = [m.strip() for m in models_env.split(",") if m.strip()]
-        if models:
-            return models
-
-    single_model = os.getenv("ANTHROPIC_MODEL", "").strip()
-    if single_model:
-        return [single_model]
-
-    return [
-        "claude-3-sonnet-20240229",
-        "claude-3-5-sonnet-20240620",
-    ]
-
-
-def extract_json(text):
-    if not isinstance(text, str):
-        return None
-
-    text = text.strip()
-
-    # 1. Direct parse
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-
-    # 2. Try fenced code blocks
-    fenced_blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    for block in fenced_blocks:
-        block = block.strip()
-        try:
-            return json.loads(block)
-        except Exception:
-            pass
-
-    # 3. Try from first { to last }
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        candidate = text[start:end + 1]
-        try:
-            return json.loads(candidate)
-        except Exception as e:
-            print("JSON extraction parse failed:", e)
-
-    return None
-
-
-def extract_text_from_anthropic_response(data):
-    if not isinstance(data, dict):
-        raise ValueError("Anthropic response is not a JSON object")
-
-    content = data.get("content")
-    if not isinstance(content, list) or not content:
-        raise ValueError("Anthropic response missing non-empty 'content' list")
-
-    text_parts = []
-    for block in content:
-        if isinstance(block, dict):
-            if "text" in block and isinstance(block["text"], str):
-                text_parts.append(block["text"])
-
-    if not text_parts:
-        raise ValueError("Anthropic response contains no text blocks")
-
-    return "\n".join(text_parts)
-
-
-def call_claude(prompt):
-    api_key = os.getenv("CLAUDE_API_KEY")
-    if not api_key:
-        fail("ERROR: CLAUDE_API_KEY not set")
-
-    candidate_models = get_candidate_models()
-    last_error = None
-
-    for model in candidate_models:
-        print(f"TRYING MODEL: {model}")
-
-        try:
-            response = requests.post(
-                API_URL,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 4000,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=REQUEST_TIMEOUT_SECONDS,
-            )
-        except requests.RequestException as e:
-            last_error = f"Network/API transport error for model {model}: {e}"
-            print(last_error)
-            continue
-
-        if response.status_code != 200:
-            body = response.text
-            print(f"Claude API error for model {model}: {body}")
-
-            if response.status_code in (400, 404) and "model" in body.lower():
-                last_error = f"Model unavailable: {model}"
-                continue
-
-            fail(f"ERROR: Anthropic API returned {response.status_code}")
-
-        try:
-            data = response.json()
-        except json.JSONDecodeError as e:
-            fail(f"ERROR: Anthropic response was not valid JSON: {e}")
-
-        try:
-            text = extract_text_from_anthropic_response(data)
-        except Exception as e:
-            fail(f"ERROR: Unexpected Anthropic response shape: {e}")
-
-        print("===== CLAUDE RAW OUTPUT =====")
-        print(text)
-        print("===== END OUTPUT =====")
-
-        parsed = extract_json(text)
-        if parsed is None:
-            last_error = f"Model {model} returned text but no parseable JSON"
-            print(last_error)
-            continue
-
-        return parsed
-
-    fail(f"ERROR: No usable model response obtained. Last error: {last_error}")
-
-
-def validate_file_entry(file_entry):
-    if not isinstance(file_entry, dict):
-        return None, None, "File entry is not an object"
-
-    path = file_entry.get("path")
-    content = file_entry.get("content")
-
-    if not isinstance(path, str) or not path.strip():
-        return None, None, "Missing or invalid file path"
-
-    if not isinstance(content, str):
-        return None, None, f"Invalid content for path: {path}"
-
-    normalized = os.path.normpath(path.strip())
-
-    if os.path.isabs(normalized):
-        return None, None, f"Absolute paths not allowed: {path}"
-
-    if normalized.startswith(".."):
-        return None, None, f"Parent traversal not allowed: {path}"
-
-    if normalized == ".git" or normalized.startswith(".git" + os.sep):
-        return None, None, f"Writing into .git is not allowed: {path}"
-
-    return normalized, content, None
-
-
-def write_generated_files(result):
-    if not isinstance(result, dict):
-        fail("ERROR: Parsed model output is not a JSON object")
-
-    files = result.get("files")
-    if not isinstance(files, list) or not files:
-        fail("ERROR: Model output contains no files")
-
-    written_count = 0
-
-    for file_entry in files:
-        path, content, error = validate_file_entry(file_entry)
-        if error:
-            fail(f"ERROR: {error}")
-
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        written_count += 1
-        print(f"✓ Wrote: {path}")
-
-    if written_count == 0:
-        fail("ERROR: No files were written")
-
-    return written_count
-
-
-def main():
-    spec = load_spec()
-
-    prompt = f"""You are an expert software engineer.
-
-IMPORTANT:
-- Do NOT include markdown
-- Do NOT include explanations
-- Output must be pure JSON only
-- The response must start with {{ and end with }}
-- The response must contain a top-level object with a 'files' array
-- Each file object must have 'path' and 'content'
-
-Return ONLY valid JSON in this exact structure:
-
-{{
-  "files": [
-    {{
-      "path": "main.py",
-      "content": "full file content here"
-    }},
-    {{
-      "path": "requirements.txt",
-      "content": "dependency list here"
-    }}
-  ]
-}}
-
-Specification:
-{json.dumps(spec, indent=2)}
-"""
-
-    result = call_claude(prompt)
-    write_generated_files(result)
-    print("BOOTSTRAP COMPLETED SUCCESSFULLY")
-
-
-if __name__ == "__main__":
-    main()
+name: Bootstrap MBH
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Debug repo contents
+        run: |
+          echo "===== ROOT ====="
+          ls -R
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run bootstrap
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        run: python engine/bootstrap.py
+
+      - name: Commit generated files
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+
+          git add .
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-generated files [skip ci]"
+            git push
+          fi

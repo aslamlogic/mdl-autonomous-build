@@ -12,12 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create engine
+      - name: Install engine files
         run: |
           mkdir -p engine
 
-          cat > engine/runner.py << 'EOF'
-import json
+          echo 'import json
 from generator import generate_system
 from writer import write_files
 
@@ -32,84 +31,49 @@ def main():
 
 if __name__ == "__main__":
     main()
-EOF
+' > engine/runner.py
 
-          cat > engine/generator.py << 'EOF'
-from claude_client import call_claude
+          echo 'from claude_client import call_claude
 
 def build_prompt(spec):
     return f"""
-You are a senior software engineer.
-
-Return ONLY valid JSON:
-
-{{
-  "files": [
-    {{
-      "path": "file path",
-      "content": "file content"
-    }}
-  ]
-}}
-
-Specification:
+Return JSON:
+{{"files":[{{"path":"file","content":"code"}}]}}
+Spec:
 {spec}
 """
 
 def generate_system(spec):
-    prompt = build_prompt(spec)
-    response = call_claude(prompt)
-    return response["files"]
-EOF
+    return call_claude(build_prompt(spec))["files"]
+' > engine/generator.py
 
-          cat > engine/writer.py << 'EOF'
-import os
+          echo 'import os
 
 def write_files(files):
-    for file in files:
-        path = file["path"]
-        content = file["content"]
+    for f in files:
+        os.makedirs(os.path.dirname(f["path"]), exist_ok=True)
+        with open(f["path"], "w") as file:
+            file.write(f["content"])
+' > engine/writer.py
 
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        with open(path, "w") as f:
-            f.write(content)
-EOF
-
-          cat > engine/claude_client.py << 'EOF'
-import os
-import requests
-import json
-
-API_URL = "https://api.anthropic.com/v1/messages"
+          echo 'import os, requests, json
 
 def call_claude(prompt):
-    api_key = os.getenv("CLAUDE_API_KEY")
-
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-
-    body = {
-        "model": "claude-3-5-sonnet-20240620",
-        "max_tokens": 4000,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ]
-    }
-
-    response = requests.post(API_URL, headers=headers, json=body)
-
-    if response.status_code != 200:
-        raise Exception(response.text)
-
-    data = response.json()
-    text = data["content"][0]["text"]
-
-    return json.loads(text)
-EOF
+    r = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": os.getenv("CLAUDE_API_KEY"),
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        },
+        json={
+            "model": "claude-3-5-sonnet-20240620",
+            "max_tokens": 2000,
+            "messages": [{"role":"user","content":prompt}]
+        }
+    )
+    return json.loads(r.json()["content"][0]["text"])
+' > engine/claude_client.py
 
       - name: Install deps
         run: pip install requests

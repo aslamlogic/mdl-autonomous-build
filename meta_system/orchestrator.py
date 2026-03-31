@@ -1,72 +1,33 @@
-import json
-import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
+from __future__ import annotations
 
-from meta_system.spec_loader import load_app_specs
+from typing import Any, Dict, List
+
 from meta_system.app_builder import AppBuilder
-from meta_system.engine_builder import EngineBuilder
 from meta_system.deployer import Deployer
+from meta_system.engine_builder import EngineBuilder
 from meta_system.executor import Executor
+from meta_system.spec_loader import SpecLoader
 
 
 class Orchestrator:
-    def __init__(self, specs_dir: str = "specs/apps/", meta_system_dir: str = "meta_system/", apps_dir: str = "apps/"):
-        self.specs_dir = Path(specs_dir)
-        self.meta_system_dir = Path(meta_system_dir)
-        self.apps_dir = Path(apps_dir)
-        self.app_builder = AppBuilder(self.apps_dir)
-        self.engine_builder = EngineBuilder(self.meta_system_dir)
-        self.deployer = Deployer(self.apps_dir)
-        self.executor = Executor()
+    def __init__(self, app_specs_dir: str = "specs/apps/", apps_dir: str = "apps/", max_workers: int | None = None) -> None:
+        self.spec_loader = SpecLoader(app_specs_dir)
+        self.app_builder = AppBuilder(apps_dir)
+        self.engine_builder = EngineBuilder(apps_dir)
+        self.deployer = Deployer(apps_dir)
+        self.executor = Executor(max_workers=max_workers)
 
-    def run(self):
-        specs = load_app_specs(self.specs_dir)
-        if not specs:
-            return {"status": "ok", "message": "No app specs found.", "apps": []}
+    def _process_spec(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        app_result = self.app_builder.build(spec)
+        engine_result = self.engine_builder.build(spec)
+        deploy_result = self.deployer.deploy({**app_result, **engine_result})
+        return {"spec": spec.get("name") or spec.get("app_name") or "app", **app_result, **engine_result, **deploy_result}
 
-        self.apps_dir.mkdir(parents=True, exist_ok=True)
-        self.meta_system_dir.mkdir(parents=True, exist_ok=True)
-
-        results = []
-        with ThreadPoolExecutor(max_workers=min(32, max(1, len(specs)))) as pool:
-            futures = {
-                pool.submit(self._build_and_deploy, spec): spec
-                for spec in specs
-            }
-            for future in as_completed(futures):
-                spec = futures[future]
-                try:
-                    results.append(future.result())
-                except Exception as exc:
-                    results.append({
-                        "app": spec.get("name", "unknown"),
-                        "status": "error",
-                        "error": str(exc),
-                    })
-
-        return {"status": "ok", "apps": results}
-
-    def _build_and_deploy(self, spec: dict):
-        app_artifacts = self.app_builder.build(spec)
-        engine_artifacts = self.engine_builder.build(spec)
-        deploy_result = self.deployer.deploy(spec, app_artifacts, engine_artifacts)
-        return {
-            "app": spec.get("name", "unknown"),
-            "status": "deployed" if deploy_result.get("success") else "built",
-            "artifacts": {
-                "app": app_artifacts,
-                "engine": engine_artifacts,
-            },
-            "deploy": deploy_result,
-        }
-
-
-def main():
-    orchestrator = Orchestrator()
-    result = orchestrator.run()
-    print(json.dumps(result, indent=2))
+    def run(self) -> List[Dict[str, Any]]:
+        specs = self.spec_loader.load_specs()
+        return self.executor.run_parallel(specs, self._process_spec)
 
 
 if __name__ == "__main__":
-    main()
+    orchestrator = Orchestrator()
+    orchestrator.run()

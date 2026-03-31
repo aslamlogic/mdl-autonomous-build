@@ -1,27 +1,13 @@
 from pathlib import Path
-import json
+from typing import Any, Dict
 
 
 class Deployer:
-    def __init__(self, apps_dir: Path):
+    def __init__(self, apps_dir: str = "apps/") -> None:
         self.apps_dir = Path(apps_dir)
 
-    def deploy(self, spec: dict, app_artifacts: dict, engine_artifacts: dict):
-        app_name = spec.get("name", "app")
-        deploy_dir = self.apps_dir / app_name / "deployment"
-        deploy_dir.mkdir(parents=True, exist_ok=True)
-
-        payload = {
-            "app": app_name,
-            "success": True,
-            "app_artifacts": app_artifacts,
-            "engine_artifacts": engine_artifacts,
-        }
-        deploy_path = deploy_dir / "deploy.json"
-        with deploy_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-
-        return {
-            "success": True,
-            "deployment_manifest": str(deploy_path),
-        }
+    def deploy(self, build_result: Dict[str, Any]) -> Dict[str, Any]:
+        app_name = build_result.get("app", "app")
+        deploy_file = self.apps_dir / app_name / "deployed.txt"
+        deploy_file.write_text(f"deployed {app_name}\n", encoding="utf-8")
+        return {"app": app_name, "deployed": True, "deploy_path": str(deploy_file)}

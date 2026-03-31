@@ -1,26 +1,15 @@
 from pathlib import Path
-import json
+from typing import Any, Dict
 
 
 class EngineBuilder:
-    def __init__(self, meta_system_dir: Path):
-        self.meta_system_dir = Path(meta_system_dir)
+    def __init__(self, apps_dir: str = "apps/") -> None:
+        self.apps_dir = Path(apps_dir)
 
-    def build(self, spec: dict):
-        engine_name = spec.get("name", "engine")
-        engine_dir = self.meta_system_dir / "engines" / engine_name
-        engine_dir.mkdir(parents=True, exist_ok=True)
-
-        config = {
-            "engine": engine_name,
-            "source": spec.get("_spec_path"),
-            "built": True,
-        }
-        config_path = engine_dir / "engine_config.json"
-        with config_path.open("w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
-
-        return {
-            "engine_dir": str(engine_dir),
-            "config": str(config_path),
-        }
+    def build(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        app_name = spec.get("name") or spec.get("app_name") or "app"
+        app_dir = self.apps_dir / app_name
+        app_dir.mkdir(parents=True, exist_ok=True)
+        engine_file = app_dir / "engine.txt"
+        engine_file.write_text(f"engine built for {app_name}\n", encoding="utf-8")
+        return {"app": app_name, "engine_path": str(engine_file)}

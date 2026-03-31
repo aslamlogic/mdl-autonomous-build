@@ -1,3 +1,5 @@
+"""Build application artifacts from specs."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -5,14 +7,17 @@ from typing import Any, Dict
 
 
 class AppBuilder:
-    def __init__(self, apps_dir: str = "apps/"):
+    def __init__(self, apps_dir: str = "apps/") -> None:
         self.apps_dir = Path(apps_dir)
-        self.apps_dir.mkdir(parents=True, exist_ok=True)
 
-    def build(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        app_name = spec.get("name") or spec.get("app_name") or "app"
-        app_dir = self.apps_dir / app_name
+    def build(self, app_spec: Dict[str, Any]) -> Path:
+        name = app_spec.get("name", "app")
+        app_dir = self.apps_dir / name
         app_dir.mkdir(parents=True, exist_ok=True)
-        artifact = app_dir / "build.txt"
-        artifact.write_text(f"built app: {app_name}\n", encoding="utf-8")
-        return {"status": "built", "app": app_name, "artifact": str(artifact)}
+        artifact = app_dir / "app.py"
+        artifact.write_text(
+            f"# Auto-generated app: {name}\n"
+            f"SPEC = {app_spec!r}\n",
+            encoding="utf-8",
+        )
+        return artifact

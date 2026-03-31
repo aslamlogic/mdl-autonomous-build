@@ -1,6 +1,6 @@
 {
   "project": "meta-dev",
-  "version": "12",
+  "version": "11",
   "build": {
     "framework": "fastapi",
     "entrypoint": "main.py"

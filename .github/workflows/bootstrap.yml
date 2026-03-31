@@ -18,11 +18,11 @@ jobs:
 
           printf "import json\nfrom generator import generate_system\nfrom writer import write_files\n\ndef load_spec():\n    with open('specs/init.json','r') as f:\n        return json.load(f)\n\ndef main():\n    spec = load_spec()\n    files = generate_system(spec)\n    write_files(files)\n\nif __name__ == '__main__':\n    main()\n" > engine/runner.py
 
-          printf "from claude_client import call_claude\n\ndef generate_system(spec):\n    return call_claude(str(spec))['files']\n" > engine/generator.py
+          printf "from claude_client import call_claude\n\ndef generate_system(spec):\n    return call_claude(str(spec)).get('files',[])\n" > engine/generator.py
 
           printf "import os\n\ndef write_files(files):\n    for f in files:\n        os.makedirs(os.path.dirname(f['path']), exist_ok=True)\n        with open(f['path'],'w') as file:\n            file.write(f['content'])\n" > engine/writer.py
 
-          printf "import os,requests,json\n\ndef call_claude(prompt):\n    r=requests.post('https://api.anthropic.com/v1/messages',headers={'x-api-key':os.getenv('CLAUDE_API_KEY'),'anthropic-version':'2023-06-01','content-type':'application/json'},json={'model':'claude-3-5-sonnet-20240620','max_tokens':2000,'messages':[{'role':'user','content':prompt}]})\n    return json.loads(r.json()['content'][0]['text'])\n" > engine/claude_client.py
+          printf "import os,requests,json\n\ndef call_claude(prompt):\n    r = requests.post(\n        'https://api.anthropic.com/v1/messages',\n        headers={\n            'x-api-key': os.getenv('CLAUDE_API_KEY'),\n            'anthropic-version': '2023-06-01',\n            'content-type': 'application/json'\n        },\n        json={\n            'model': 'claude-3-5-sonnet-20240620',\n            'max_tokens': 2000,\n            'messages': [{'role':'user','content':prompt}]\n        }\n    )\n\n    data = r.json()\n\n    if 'content' in data and len(data['content']) > 0:\n        text = data['content'][0].get('text','')\n        try:\n            return json.loads(text)\n        except:\n            return {'files': []}\n\n    return {'files': []}\n" > engine/claude_client.py
 
       - name: Install deps
         run: pip install requests

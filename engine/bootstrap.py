@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import requests
+import subprocess
 from pathlib import Path
 
 API_URL = "https://api.openai.com/v1/responses"
@@ -32,21 +33,18 @@ def detect_mode():
     fail("No spec found")
 
 
-def prompt(mode, spec):
+def build_prompt(mode, spec):
     if mode == "meta":
-        return f"""Generate a META SYSTEM.
+        return f"""Generate META SYSTEM.
 
 Return ONLY JSON:
-{{
-  "files": [{{"path":"...","content":"..."}}]
-}}
+{{"files":[{{"path":"...","content":"..."}}]}}
 
 SYSTEM MUST:
 - create orchestrator
-- support multiple app builds
+- support multi-app builds
 - support parallel execution
-- call builders and deployers
-- be runnable
+- include builder + deployer modules
 
 OUTPUT DIR:
 meta_system/
@@ -66,7 +64,7 @@ SPEC:{json.dumps(spec)}"""
 def call(prompt):
     key = os.getenv("OPENAI_API_KEY")
     if not key:
-        fail("No API key")
+        fail("OPENAI_API_KEY not set")
 
     r = requests.post(
         API_URL,
@@ -81,7 +79,9 @@ def call(prompt):
         fail(r.text)
 
     text = r.json()["output"][0]["content"][0]["text"]
+    print("===== OPENAI OUTPUT =====")
     print(text)
+    print("===== END =====")
     return json.loads(text)
 
 
@@ -102,12 +102,34 @@ def write(files):
         print("WROTE", p)
 
 
+def run_orchestrator():
+    orchestrator_path = Path("meta_system/orchestrator.py")
+
+    if not orchestrator_path.exists():
+        print("No orchestrator found. Skipping execution.")
+        return
+
+    print("===== RUNNING META SYSTEM =====")
+    try:
+        subprocess.run(
+            [sys.executable, str(orchestrator_path)],
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Orchestrator failed: {e}")
+    print("===== META SYSTEM COMPLETE =====")
+
+
 def main():
     mode, path, spec = detect_mode()
     print("MODE:", mode)
 
-    out = call(prompt(mode, spec))
-    write(out["files"])
+    result = call(build_prompt(mode, spec))
+    write(result["files"])
+
+    # CRITICAL: handoff
+    if mode == "meta":
+        run_orchestrator()
 
 
 if __name__ == "__main__":

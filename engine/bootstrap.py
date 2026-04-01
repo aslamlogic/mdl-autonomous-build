@@ -1,163 +1,192 @@
-import os
-import sys
 import json
-import requests
-import subprocess
+import os
+import re
+import sys
 from pathlib import Path
 
-API_URL = "https://api.openai.com/v1/responses"
+import requests
 
-META_SPEC = "specs/meta.json"
-ENGINE_SPEC = "specs/engine.json"
-APP_SPEC = "specs/init.json"
+CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
+SPEC_CANDIDATES = [
+    Path("specs/app.json"),
+    Path("specs/init.json"),
+]
+FORBIDDEN_PREFIXES = (
+    ".git/",
+    ".github/workflows/",
+)
 
-FORBIDDEN = [".github/workflows/"]
+OUTPUT_SCHEMA = {
+    "name": "generated_files",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            }
+        },
+        "required": ["files"],
+    },
+}
 
 
-def fail(msg):
-    print(msg)
+def fail(message: str) -> None:
+    print(f"ERROR: {message}")
     sys.exit(1)
 
 
-def read(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def read_spec() -> tuple[Path, dict]:
+    for path in SPEC_CANDIDATES:
+        if path.exists():
+            with path.open("r", encoding="utf-8") as handle:
+                return path, json.load(handle)
+    fail("No spec found. Expected specs/app.json or specs/init.json.")
 
 
-def detect_mode():
-    if Path(META_SPEC).exists():
-        return "meta", META_SPEC, read(META_SPEC)
-    if Path(ENGINE_SPEC).exists():
-        return "engine", ENGINE_SPEC, read(ENGINE_SPEC)
-    if Path(APP_SPEC).exists():
-        return "app", APP_SPEC, read(APP_SPEC)
-    fail("No spec found")
-
-
-def build_prompt(mode, spec):
-    if mode == "meta":
-        return f"""Generate META SYSTEM.
-
-Return ONLY JSON:
-{{"files":[{{"path":"...","content":"..."}}]}}
-
-SYSTEM MUST:
-- create orchestrator
-- support multi-app builds
-- support parallel execution
-- include builder + deployer modules
-
-OUTPUT DIR:
-meta_system/
-
-SPEC:
-{json.dumps(spec)}
-"""
-    if mode == "engine":
-        return f"""Upgrade engine. JSON only.
-{{"files":[{{"path":"...","content":"..."}}]}}
-SPEC:{json.dumps(spec)}"""
-    return f"""Build app. JSON only.
-{{"files":[{{"path":"...","content":"..."}}]}}
-SPEC:{json.dumps(spec)}"""
-
-
-def call(prompt):
-    key = os.getenv("OPENAI_API_KEY")
-    if not key:
-        fail("OPENAI_API_KEY not set")
-
-    r = requests.post(
-        API_URL,
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "gpt-5.4-mini",
-            "input": [{"role": "user", "content": prompt}]
-        },
-        timeout=120
+def build_messages(spec_path: Path, spec: dict) -> list[dict]:
+    developer_text = (
+        "You are a deterministic software file generator. "
+        "Return only JSON matching the supplied schema. "
+        "Do not include markdown fences. "
+        "Do not include commentary. "
+        "Generate complete file contents only."
     )
 
-    if r.status_code != 200:
-        fail(r.text)
+    user_text = (
+        f"Specification source: {spec_path.as_posix()}\n"
+        "Generate a minimal, runnable FastAPI application from this specification.\n"
+        "Rules:\n"
+        "1. Return only files.\n"
+        "2. Do not generate .github/workflows files.\n"
+        "3. Keep output minimal and executable.\n"
+        "4. If requirements.txt is needed, include only necessary packages.\n"
+        "5. Main entrypoint must be main.py.\n"
+        "6. The service must expose exactly the endpoints defined in the spec.\n"
+        "7. Use plain Python and FastAPI only.\n\n"
+        f"SPEC:\n{json.dumps(spec, indent=2, ensure_ascii=False)}"
+    )
 
-    data = r.json()
-
-    try:
-        text = data["output"][0]["content"][0]["text"]
-    except Exception:
-        fail("Unexpected response format")
-
-    print("===== OPENAI OUTPUT =====")
-    print(text)
-    print("===== END =====")
-
-    try:
-        return json.loads(text)
-    except Exception as e:
-        fail(f"JSON parse error: {e}")
-
-
-def is_forbidden(path):
-    return any(path.startswith(f) for f in FORBIDDEN)
+    return [
+        {"role": "developer", "content": developer_text},
+        {"role": "user", "content": user_text},
+    ]
 
 
-def write(files):
-    for f in files:
-        path = f.get("path")
-        content = f.get("content")
+def call_openai(messages: list[dict]) -> dict:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        fail("OPENAI_API_KEY is not set.")
 
-        if not path or not isinstance(content, str):
-            fail("Invalid file entry")
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-        if is_forbidden(path):
-            print("SKIP", path)
-            continue
+    response = requests.post(
+        CHAT_COMPLETIONS_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": messages,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": OUTPUT_SCHEMA,
+            },
+            "temperature": 0,
+        },
+        timeout=180,
+    )
 
-        safe_path = os.path.normpath(path)
+    if response.status_code != 200:
+        fail(f"OpenAI API call failed: {response.status_code} {response.text}")
 
-        if safe_path.startswith("..") or os.path.isabs(safe_path):
-            fail(f"Unsafe path: {path}")
-
-        Path(safe_path).parent.mkdir(parents=True, exist_ok=True)
-
-        with open(safe_path, "w", encoding="utf-8") as out:
-            out.write(content)
-
-        print("WROTE", safe_path)
-
-
-def run_orchestrator():
-    print("===== RUNNING META SYSTEM =====")
+    data = response.json()
 
     try:
-        subprocess.run(
-            [sys.executable, "-m", "meta_system.orchestrator"],
-            check=True
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Orchestrator failed: {e}")
+        content = data["choices"][0]["message"]["content"]
+    except Exception as exc:
+        fail(f"Unexpected OpenAI response format: {exc}")
 
-    print("===== META SYSTEM COMPLETE =====")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        fail(f"Model returned invalid JSON: {exc}\nRaw content:\n{content}")
 
 
-def main():
-    mode, spec_path, spec = detect_mode()
-    print("MODE:", mode)
+def normalise_content(content: str) -> str:
+    content = content.strip()
 
-    result = call(build_prompt(mode, spec))
-    files = result.get("files")
+    fenced_match = re.fullmatch(r"```[a-zA-Z0-9_-]*\n(.*)\n```", content, flags=re.DOTALL)
+    if fenced_match:
+        content = fenced_match.group(1)
 
+    if "```" in content:
+        fail("Generated content still contains markdown fences.")
+
+    return content
+
+
+def validate_path(path_str: str) -> Path:
+    if not path_str or not isinstance(path_str, str):
+        fail("File path is missing or invalid.")
+
+    if any(path_str.startswith(prefix) for prefix in FORBIDDEN_PREFIXES):
+        fail(f"Forbidden output path: {path_str}")
+
+    path = Path(path_str)
+
+    if path.is_absolute():
+        fail(f"Absolute paths are not allowed: {path_str}")
+
+    resolved = path.as_posix()
+    if resolved.startswith("../") or "/../" in resolved or resolved == "..":
+        fail(f"Path traversal is not allowed: {path_str}")
+
+    return path
+
+
+def write_files(payload: dict) -> None:
+    files = payload.get("files")
     if not isinstance(files, list) or not files:
-        fail("No files returned")
+        fail("No files returned.")
 
-    write(files)
+    for item in files:
+        if not isinstance(item, dict):
+            fail("Each file entry must be an object.")
 
-    # critical handoff
-    if mode == "meta":
-        run_orchestrator()
+        raw_path = item.get("path")
+        raw_content = item.get("content")
+
+        if not isinstance(raw_content, str):
+            fail(f"Invalid content for file: {raw_path}")
+
+        output_path = validate_path(raw_path)
+        content = normalise_content(raw_content)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8")
+        print(f"WROTE {output_path.as_posix()}")
+
+
+def main() -> None:
+    spec_path, spec = read_spec()
+    print(f"USING SPEC {spec_path.as_posix()}")
+    messages = build_messages(spec_path, spec)
+    payload = call_openai(messages)
+    write_files(payload)
+    print("BOOTSTRAP COMPLETE")
 
 
 if __name__ == "__main__":

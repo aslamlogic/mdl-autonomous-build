@@ -25,8 +25,8 @@ FORBIDDEN_PREFIXES = (
 )
 
 SUPPORTED_TASKS = {
-    "strengthen_contract": "Convert legacy API spec into typed contract form with system/api/response schema structure.",
-    "add_post_echo": "Ensure a typed POST /echo endpoint exists with request.text -> response.echo mapping.",
+    "strengthen_contract": "Convert spec to typed contract",
+    "add_post_echo": "Add typed POST /echo endpoint",
 }
 
 PLANNER_SCHEMA = {
@@ -34,14 +34,13 @@ PLANNER_SCHEMA = {
     "strict": True,
     "schema": {
         "type": "object",
-        "additionalProperties": False,
         "properties": {
             "tasks": {
                 "type": "array",
                 "items": {
                     "type": "string",
                     "enum": list(SUPPORTED_TASKS.keys()),
-                }
+                },
             }
         },
         "required": ["tasks"],
@@ -53,14 +52,12 @@ OUTPUT_SCHEMA = {
     "strict": True,
     "schema": {
         "type": "object",
-        "additionalProperties": False,
         "properties": {
             "files": {
                 "type": "array",
-                "minItems": 1,
+                "minItems": 2,
                 "items": {
                     "type": "object",
-                    "additionalProperties": False,
                     "properties": {
                         "path": {"type": "string"},
                         "content": {"type": "string"},
@@ -74,47 +71,127 @@ OUTPUT_SCHEMA = {
 }
 
 
-def fail(message: str) -> None:
-    print(f"ERROR: {message}")
+def fail(msg):
+    print(f"ERROR: {msg}")
     sys.exit(1)
 
 
-def read_json(path: Path, default: Any | None = None) -> Any:
+def read_json(path, default):
     if not path.exists():
-        if default is not None:
-            return default
-        fail(f"Missing required file: {path.as_posix()}")
-    with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return default
+    return json.loads(path.read_text())
 
 
-def write_json(path: Path, data: Any) -> None:
+def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(data, indent=2))
 
 
-def read_spec() -> tuple[Path, dict]:
-    for path in SPEC_CANDIDATES:
-        if path.exists():
-            with path.open("r", encoding="utf-8") as f:
-                return path, json.load(f)
-    fail("No spec found. Expected specs/app.json or specs/init.json.")
+def read_spec():
+    for p in SPEC_CANDIDATES:
+        if p.exists():
+            return p, json.loads(p.read_text())
+    fail("No spec found")
 
 
-def save_spec(spec_path: Path, spec: dict) -> None:
-    spec_path.parent.mkdir(parents=True, exist_ok=True)
-    spec_path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+def save_spec(path, spec):
+    path.write_text(json.dumps(spec, indent=2))
 
 
-def call_openai_json(messages: list[dict], schema: dict) -> dict:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        fail("OPENAI_API_KEY not set.")
+# ---------------- TASK LOGIC ---------------- #
 
-    response = requests.post(
+def to_contract(spec):
+    if "api" in spec:
+        return spec
+
+    endpoints = spec.get("endpoints", [])
+    new_eps = []
+
+    for ep in endpoints:
+        resp = ep.get("response", {})
+        schema = {
+            k: {"type": "string", "example": v}
+            for k, v in resp.items()
+        }
+
+        new_eps.append({
+            "name": ep.get("name", "endpoint"),
+            "method": ep.get("method", "GET"),
+            "path": ep.get("path", "/"),
+            "response": {
+                "type": "object",
+                "schema": schema
+            }
+        })
+
+    return {
+        "system": {"name": "meta", "type": "fastapi"},
+        "api": {"endpoints": new_eps}
+    }
+
+
+def add_post_echo(spec):
+    spec = to_contract(spec)
+    eps = spec["api"]["endpoints"]
+
+    if any(e["path"] == "/echo" for e in eps):
+        return spec
+
+    eps.append({
+        "name": "echo",
+        "method": "POST",
+        "path": "/echo",
+        "request": {
+            "type": "object",
+            "schema": {
+                "text": {"type": "string", "example": "hello"}
+            }
+        },
+        "response": {
+            "type": "object",
+            "schema": {
+                "echo": {"type": "string", "example": "hello"}
+            }
+        }
+    })
+    return spec
+
+
+def apply_task(spec, task):
+    if task == "strengthen_contract":
+        return to_contract(spec)
+    if task == "add_post_echo":
+        return add_post_echo(spec)
+    fail(f"Unknown task {task}")
+
+
+# ---------------- GENERATION ---------------- #
+
+def build_messages(spec):
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You MUST output EXACTLY two files:\n"
+                "main.py and requirements.txt\n\n"
+                "No markdown. No explanation.\n"
+                "Return valid JSON only.\n\n"
+                "requirements.txt MUST contain:\n"
+                "fastapi\nuvicorn\npydantic\n"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(spec, indent=2),
+        },
+    ]
+
+
+def call_openai(messages):
+    r = requests.post(
         CHAT_COMPLETIONS_URL,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
             "Content-Type": "application/json",
         },
         json={
@@ -122,416 +199,89 @@ def call_openai_json(messages: list[dict], schema: dict) -> dict:
             "messages": messages,
             "response_format": {
                 "type": "json_schema",
-                "json_schema": schema,
+                "json_schema": OUTPUT_SCHEMA,
             },
             "temperature": 0,
         },
-        timeout=180,
     )
 
-    if response.status_code != 200:
-        fail(f"OpenAI error: {response.status_code} {response.text}")
+    if r.status_code != 200:
+        fail(r.text)
 
-    data = response.json()
-
-    try:
-        content = data["choices"][0]["message"]["content"]
-        return json.loads(content)
-    except Exception as e:
-        fail(f"Invalid JSON from model: {e}")
+    content = r.json()["choices"][0]["message"]["content"]
+    return json.loads(content)
 
 
-def is_contract_spec(spec: dict) -> bool:
-    return isinstance(spec, dict) and "system" in spec and "api" in spec and isinstance(spec["api"], dict)
+# ---------------- VALIDATION ---------------- #
+
+def validate(payload):
+    files = payload.get("files", [])
+    paths = [f["path"] for f in files]
+
+    if "main.py" not in paths:
+        fail("main.py missing")
+
+    if "requirements.txt" not in paths:
+        fail("requirements.txt missing")
+
+    main = next(f["content"] for f in files if f["path"] == "main.py")
+
+    if "FastAPI" not in main:
+        fail("FastAPI missing")
+
+    if "@app.get" not in main:
+        fail("GET missing")
+
+    if "POST" in main and "@app.post" not in main:
+        fail("POST missing")
 
 
-def to_contract_spec(spec: dict) -> dict:
-    if is_contract_spec(spec):
-        return spec
-
-    name = spec.get("name", "meta-dev-api")
-    system_type = spec.get("type", "fastapi")
-    description = spec.get("description", "Typed API generated by meta software factory")
-
-    legacy_endpoints = spec.get("endpoints", [])
-    new_endpoints = []
-
-    for ep in legacy_endpoints:
-        method = ep.get("method", "GET").upper()
-        path = ep.get("path", "/")
-        response_obj = ep.get("response", {})
-
-        schema = {}
-        if isinstance(response_obj, dict):
-            for key, value in response_obj.items():
-                inferred_type = "string"
-                if isinstance(value, bool):
-                    inferred_type = "boolean"
-                elif isinstance(value, int):
-                    inferred_type = "integer"
-                elif isinstance(value, float):
-                    inferred_type = "number"
-                elif isinstance(value, list):
-                    inferred_type = "array"
-                elif isinstance(value, dict):
-                    inferred_type = "object"
-
-                schema[key] = {
-                    "type": inferred_type,
-                    "example": value,
-                }
-
-        new_endpoints.append(
-            {
-                "name": ep.get("name", path.strip("/").replace("/", "_") or "root"),
-                "method": method,
-                "path": path,
-                "description": ep.get("description", f"{method} {path} endpoint"),
-                "response": {
-                    "type": "object",
-                    "schema": schema,
-                },
-            }
-        )
-
-    return {
-        "system": {
-            "name": name,
-            "type": system_type,
-            "description": description,
-        },
-        "api": {
-            "basePath": "/",
-            "endpoints": new_endpoints,
-        },
-    }
-
-
-def ensure_post_echo(spec: dict) -> dict:
-    spec = to_contract_spec(spec)
-    endpoints = spec.setdefault("api", {}).setdefault("endpoints", [])
-
-    for ep in endpoints:
-        if ep.get("method", "").upper() == "POST" and ep.get("path") == "/echo":
-            return spec
-
-    endpoints.append(
-        {
-            "name": "echo",
-            "method": "POST",
-            "path": "/echo",
-            "description": "Echo input data",
-            "request": {
-                "type": "object",
-                "schema": {
-                    "text": {
-                        "type": "string",
-                        "example": "hello"
-                    }
-                }
-            },
-            "response": {
-                "type": "object",
-                "schema": {
-                    "echo": {
-                        "type": "string",
-                        "example": "hello"
-                    }
-                }
-            }
-        }
-    )
-    return spec
-
-
-def heuristic_plan(goal: str, spec: dict) -> list[str]:
-    goal_l = goal.lower()
-    tasks: list[str] = []
-
-    if not is_contract_spec(spec):
-        tasks.append("strengthen_contract")
-
-    if any(token in goal_l for token in ["post", "echo", "typed", "input"]):
-        tasks.append("add_post_echo")
-
-    return dedupe(tasks)
-
-
-def dedupe(items: list[str]) -> list[str]:
-    seen = set()
-    result = []
-    for item in items:
-        if item not in seen:
-            result.append(item)
-            seen.add(item)
-    return result
-
-
-def plan_tasks(goal: str, spec: dict) -> list[str]:
-    heuristic = heuristic_plan(goal, spec)
-
-    messages = [
-        {
-            "role": "developer",
-            "content": (
-                "You are a deterministic task planner for a software factory. "
-                "Choose only from the supported task IDs. "
-                "Return the minimum ordered task list needed to satisfy the goal. "
-                "Do not invent task IDs."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Goal: {goal}\n\n"
-                f"Current spec:\n{json.dumps(spec, indent=2, ensure_ascii=False)}\n\n"
-                "Supported tasks:\n"
-                + "\n".join(f"- {k}: {v}" for k, v in SUPPORTED_TASKS.items())
-            ),
-        },
-    ]
-
-    try:
-        planned = call_openai_json(messages, PLANNER_SCHEMA).get("tasks", [])
-        planned = [task for task in planned if task in SUPPORTED_TASKS]
-        combined = dedupe(heuristic + planned)
-        return combined
-    except Exception:
-        return heuristic
-
-
-def apply_task(spec: dict, task_id: str) -> dict:
-    updated = deepcopy(spec)
-
-    if task_id == "strengthen_contract":
-        return to_contract_spec(updated)
-
-    if task_id == "add_post_echo":
-        updated = to_contract_spec(updated)
-        return ensure_post_echo(updated)
-
-    fail(f"Unsupported task: {task_id}")
-    return updated
-
-
-def build_generation_messages(spec_path: Path, spec: dict) -> list[dict]:
-    return [
-        {
-            "role": "developer",
-            "content": (
-                "You are a deterministic FastAPI application generator.\n"
-                "Return ONLY valid JSON matching the provided schema.\n"
-                "No markdown fences. No commentary. No prose.\n\n"
-                "Rules:\n"
-                "- Output complete runnable files only.\n"
-                "- Generate main.py and requirements.txt.\n"
-                "- Use FastAPI.\n"
-                "- Implement all endpoints in api.endpoints exactly.\n"
-                "- Support GET and POST methods.\n"
-                "- For POST endpoints, use Pydantic BaseModel request and response models.\n"
-                "- Use response schema example values for static GET outputs.\n"
-                "- For request/response mapping, map request.text to response.echo when the endpoint is /echo.\n"
-                "- Keep the code minimal and executable.\n"
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Specification source: {spec_path.as_posix()}\n\n"
-                f"Specification:\n{json.dumps(spec, indent=2, ensure_ascii=False)}\n\n"
-                "Required output files:\n"
-                "1. main.py\n"
-                "2. requirements.txt\n"
-            ),
-        },
-    ]
-
-
-def normalise_content(content: str) -> str:
-    content = content.strip()
-
-    fenced = re.fullmatch(r"```[a-zA-Z0-9_-]*\n(.*)\n```", content, re.DOTALL)
-    if fenced:
-        content = fenced.group(1)
-
-    if "```" in content:
-        fail("Markdown fence detected in generated content.")
-
-    return content
-
-
-def validate_path(path_str: str) -> Path:
-    if not path_str or not isinstance(path_str, str):
-        fail("Validation failed: invalid file path.")
-
-    if any(path_str.startswith(prefix) for prefix in FORBIDDEN_PREFIXES):
-        fail(f"Validation failed: forbidden path {path_str}")
-
-    path = Path(path_str)
-
-    if path.is_absolute():
-        fail(f"Validation failed: absolute path not allowed {path_str}")
-
-    if ".." in path.parts:
-        fail(f"Validation failed: path traversal detected {path_str}")
-
-    return path
-
-
-def validate_files(payload: dict, spec: dict) -> None:
-    files = payload.get("files")
-
-    if not isinstance(files, list) or not files:
-        fail("Validation failed: no files returned.")
-
-    by_path: dict[str, str] = {}
-
-    for item in files:
-        path = item.get("path")
-        content = item.get("content")
-
-        if not path or not isinstance(path, str):
-            fail("Validation failed: invalid file path.")
-
-        if not content or not isinstance(content, str):
-            fail(f"Validation failed: empty content in {path}")
-
-        if len(content.strip()) < 10:
-            fail(f"Validation failed: content too short in {path}")
+def write_files(payload):
+    for f in payload["files"]:
+        path = Path(f["path"])
+        content = f["content"].strip()
 
         if "```" in content:
-            fail(f"Validation failed: markdown fence detected in {path}")
+            fail("markdown detected")
 
-        validate_path(path)
-        by_path[path] = normalise_content(content)
-
-    if "main.py" not in by_path:
-        fail("Validation failed: main.py missing.")
-
-    if "requirements.txt" not in by_path:
-        fail("Validation failed: requirements.txt missing.")
-
-    main_py = by_path["main.py"]
-    requirements_txt = by_path["requirements.txt"].lower()
-
-    if "from fastapi import fastapi" not in main_py.lower() and "from fastapi import FastAPI" not in main_py:
-        fail("Validation failed: FastAPI import missing in main.py")
-
-    if "app = FastAPI()" not in main_py:
-        fail("Validation failed: app instance missing in main.py")
-
-    if "fastapi" not in requirements_txt:
-        fail("Validation failed: fastapi missing in requirements.txt")
-
-    if "uvicorn" not in requirements_txt:
-        fail("Validation failed: uvicorn missing in requirements.txt")
-
-    endpoints = to_contract_spec(spec)["api"]["endpoints"]
-
-    for ep in endpoints:
-        method = ep["method"].lower()
-        path = ep["path"]
-        decorator = f'@app.{method}("{path}")'
-        if decorator not in main_py:
-            fail(f"Validation failed: endpoint decorator missing {decorator}")
-
-        if method == "post" and "BaseModel" not in main_py:
-            fail("Validation failed: BaseModel missing for POST endpoint support")
-
-    if any(ep["method"].upper() == "POST" for ep in endpoints):
-        if "@app.post" not in main_py:
-            fail("Validation failed: POST endpoint missing in main.py")
+        path.write_text(content + "\n")
+        print(f"WROTE {path}")
 
 
-def write_files(payload: dict) -> None:
-    for item in payload["files"]:
-        path = validate_path(item["path"])
-        content = normalise_content(item["content"])
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content + ("\n" if not content.endswith("\n") else ""), encoding="utf-8")
-        print(f"WROTE {path.as_posix()}")
+# ---------------- MAIN LOOP ---------------- #
 
-
-def generate_from_spec(spec_path: Path, spec: dict) -> None:
-    messages = build_generation_messages(spec_path, spec)
-    payload = call_openai_json(messages, OUTPUT_SCHEMA)
-    validate_files(payload, spec)
-    write_files(payload)
-
-
-def main() -> None:
+def main():
     spec_path, spec = read_spec()
-    goal_data = read_json(GOAL_PATH, {"goal": ""})
-    queue_data = read_json(QUEUE_PATH, {"goal": "", "tasks": []})
-    state_data = read_json(
-        STATE_PATH,
-        {
-            "goal": "",
-            "status": "idle",
-            "current_index": 0,
-            "completed": [],
-        },
-    )
+    goal = read_json(GOAL_PATH, {}).get("goal", "")
 
-    goal = str(goal_data.get("goal", "")).strip()
-    if not goal:
-        fail("goal.json exists but contains no goal.")
+    queue = read_json(QUEUE_PATH, {"tasks": []})
+    state = read_json(STATE_PATH, {"current": 0})
 
-    print(f"USING SPEC {spec_path.as_posix()}")
-    print(f"GOAL: {goal}")
+    if not queue["tasks"]:
+        tasks = []
+        if "post" in goal.lower():
+            tasks.append("add_post_echo")
+        tasks.append("strengthen_contract")
 
-    goal_changed = state_data.get("goal") != goal
+        queue = {"tasks": tasks}
+        write_json(QUEUE_PATH, queue)
 
-    if goal_changed:
-        planned_tasks = plan_tasks(goal, spec)
-        queue_data = {
-            "goal": goal,
-            "tasks": planned_tasks,
-        }
-        state_data = {
-            "goal": goal,
-            "status": "planned",
-            "current_index": 0,
-            "completed": [],
-        }
-        write_json(QUEUE_PATH, queue_data)
-        write_json(STATE_PATH, state_data)
-        print(f"PLANNED TASKS: {planned_tasks}")
+    idx = state.get("current", 0)
 
-    tasks = queue_data.get("tasks", [])
-    current_index = int(state_data.get("current_index", 0))
+    if idx < len(queue["tasks"]):
+        task = queue["tasks"][idx]
+        print(f"APPLYING TASK: {task}")
 
-    if not tasks:
-        print("NO TASKS PLANNED. GENERATING FROM CURRENT SPEC.")
-        spec = to_contract_spec(spec)
-        save_spec(spec_path, spec)
-        generate_from_spec(spec_path, spec)
-        state_data["status"] = "completed"
-        write_json(STATE_PATH, state_data)
-        print("BOOTSTRAP COMPLETE")
-        return
-
-    while current_index < len(tasks):
-        task_id = tasks[current_index]
-        print(f"APPLYING TASK: {task_id}")
-
-        spec = apply_task(spec, task_id)
+        spec = apply_task(spec, task)
         save_spec(spec_path, spec)
 
-        generate_from_spec(spec_path, spec)
+        payload = call_openai(build_messages(spec))
+        validate(payload)
+        write_files(payload)
 
-        state_data["status"] = "running"
-        state_data["current_index"] = current_index + 1
-        completed = list(state_data.get("completed", []))
-        if task_id not in completed:
-            completed.append(task_id)
-        state_data["completed"] = completed
-        write_json(STATE_PATH, state_data)
+        state["current"] = idx + 1
+        write_json(STATE_PATH, state)
 
-        current_index += 1
-
-    state_data["status"] = "completed"
-    write_json(STATE_PATH, state_data)
     print("BOOTSTRAP COMPLETE")
 
 

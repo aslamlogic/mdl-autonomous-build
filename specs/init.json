@@ -1,57 +1,5 @@
 {
-  "system": {
-    "name": "meta-dev-launcher",
-    "type": "fastapi"
-  },
   "api": {
-    "endpoints": [
-      {
-        "name": "root",
-        "method": "GET",
-        "path": "/",
-        "response": {
-          "type": "object",
-          "schema": {
-            "message": "string"
-          }
-        }
-      },
-      {
-        "name": "health",
-        "method": "GET",
-        "path": "/health",
-        "response": {
-          "type": "object",
-          "schema": {
-            "status": "string"
-          }
-        }
-      },
-      {
-        "name": "echo",
-        "method": "POST",
-        "path": "/echo",
-        "request": {
-          "type": "object",
-          "schema": {
-            "text": "string"
-          }
-        },
-        "response": {
-          "type": "object",
-          "schema": {
-            "echo": "string"
-          }
-        }
-      }
-    ]
-  },
-  "build": {
-    "tasks": [
-      "generate_api",
-      "generate_models",
-      "generate_routes",
-      "generate_requirements"
-    ]
+    "endpoints": []
   }
 }

@@ -1,22 +1,27 @@
 from iteration.build import build_system
+from iteration.runtime import start_server
 
 
 def run_iteration_loop(spec: dict):
-    print("=== CONTROLLER STARTED ===")
+    print("=== CONTROLLER STARTED ===", flush=True)
 
-    result = build_system(spec)
+    # STEP 1 — Build
+    build = build_system(spec)
+    print("=== BUILD RESULT ===", build, flush=True)
 
-    print("=== BUILD RESULT ===")
-    print(result)
+    # STEP 2 — Runtime
+    runtime = start_server()
+    print("=== RUNTIME RESULT ===", runtime, flush=True)
 
     return {
         "build_id": "test_build",
-        "message": "Build executed",
+        "message": "Build + runtime executed",
         "deployment_url": "http://localhost:8000",
-        "logs": result.get("logs", []),
+        "logs": build.get("logs", []) + runtime.get("logs", []),
         "normalized_spec": spec,
     }
 
 
 if __name__ == "__main__":
-    run_iteration_loop({})
+    result = run_iteration_loop({})
+    print("=== FINAL RESULT ===", result, flush=True)

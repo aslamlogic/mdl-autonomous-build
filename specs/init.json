@@ -1,6 +1,21 @@
 {
   "name": "meta-dev-api",
   "type": "fastapi",
-  "description": "Deliberately broken spec to test validation layer",
-  "endpoints": []
+  "description": "Minimal working API",
+  "endpoints": [
+    {
+      "path": "/",
+      "method": "GET",
+      "response": {
+        "message": "Welcome to the meta-dev API!"
+      }
+    },
+    {
+      "path": "/health",
+      "method": "GET",
+      "response": {
+        "status": "healthy"
+      }
+    }
+  ]
 }

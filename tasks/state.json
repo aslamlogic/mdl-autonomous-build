@@ -1,7 +1,4 @@
 {
-  "goal": "",
-  "status": "idle",
-  "current_index": 0,
-  "completed": [],
-  "current": 1
+  "index": 0,
+  "completed": []
 }

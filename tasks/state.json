@@ -1,4 +1,7 @@
 {
-  "index": 0,
-  "completed": []
+  "index": 2,
+  "completed": [
+    "add_post_echo",
+    "strengthen_contract"
+  ]
 }

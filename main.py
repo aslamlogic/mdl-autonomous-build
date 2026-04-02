@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -9,13 +9,19 @@ class EchoRequest(BaseModel):
 class EchoResponse(BaseModel):
     echo: str
 
-@app.get("/")
-async def read_root():
-    return {"message": "Welcome to the meta-dev API!"}
+class HealthResponse(BaseModel):
+    status: str
 
-@app.get("/health")
+class RootResponse(BaseModel):
+    message: str = "Welcome to the meta-dev API!"
+
+@app.get("/", response_model=RootResponse)
+async def read_root():
+    return RootResponse()
+
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    return {"status": "healthy"}
+    return HealthResponse(status="healthy")
 
 @app.post("/echo", response_model=EchoResponse)
 async def echo(request: EchoRequest):

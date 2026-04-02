@@ -10,6 +10,7 @@ from engine.bootstrap import build_system
 from iteration.evaluator import evaluate_system
 from iteration.spec_updater import update_spec
 from iteration.fault_log import log_faults
+from iteration.git_commit import commit_and_push
 
 
 SPEC_PATH = "specs/init.json"
@@ -42,23 +43,27 @@ def run_controller() -> dict:
         evaluation = evaluate_system(spec, BASE_URL)
         print("EVALUATION RESULT:", evaluation)
 
-        # 3. Log faults (PASSIVE — NO EFFECT ON LOGIC)
+        # 3. Log faults
         log_faults(spec, evaluation)
 
         # 4. Success check
         if evaluation.get("status") == "success":
             print("SUCCESS — stopping loop")
+
+            # ---- COMMIT GENERATED SYSTEM ----
+            commit_and_push()
+
             return {
                 "status": "success",
                 "iterations": iteration,
                 "goal_satisfied": True,
             }
 
-        # 5. Update spec (deterministic)
+        # 5. Update spec
         print("UPDATING SPEC...")
         new_spec = update_spec(spec, evaluation)
 
-        # 6. Detect no-op (prevents infinite loop)
+        # 6. Detect no-op
         if new_spec == spec:
             print("NO CHANGE IN SPEC — stopping to avoid infinite loop")
             return {

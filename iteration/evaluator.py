@@ -3,42 +3,45 @@ import requests
 
 def _compare_schema(expected: dict, actual: dict) -> bool:
     """
-    Deterministic schema comparison with basic type enforcement.
-    Supported types: string, number, boolean, object, array
+    Deterministic schema comparison supporting:
+    1. Type-based schema (string, number, boolean, object, array)
+    2. Literal value schema (e.g. "ok")
     """
 
     if not isinstance(expected, dict) or not isinstance(actual, dict):
         return False
 
-    for key, expected_type in expected.items():
+    for key, expected_value in expected.items():
         if key not in actual:
             return False
 
         actual_value = actual[key]
 
-        if expected_type == "string":
+        # ---- TYPE-BASED SCHEMA ----
+        if expected_value == "string":
             if not isinstance(actual_value, str):
                 return False
 
-        elif expected_type == "number":
+        elif expected_value == "number":
             if not isinstance(actual_value, (int, float)):
                 return False
 
-        elif expected_type == "boolean":
+        elif expected_value == "boolean":
             if not isinstance(actual_value, bool):
                 return False
 
-        elif expected_type == "object":
+        elif expected_value == "object":
             if not isinstance(actual_value, dict):
                 return False
 
-        elif expected_type == "array":
+        elif expected_value == "array":
             if not isinstance(actual_value, list):
                 return False
 
+        # ---- LITERAL VALUE SCHEMA ----
         else:
-            # Unknown schema type → fail deterministically
-            return False
+            if actual_value != expected_value:
+                return False
 
     return True
 

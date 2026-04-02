@@ -4,7 +4,6 @@
     "type": "fastapi",
     "description": "API with GET and POST endpoints"
   },
-
   "api": {
     "basePath": "/",
     "endpoints": [
@@ -13,7 +12,6 @@
         "method": "GET",
         "path": "/",
         "description": "Root endpoint",
-
         "response": {
           "type": "object",
           "schema": {
@@ -24,13 +22,11 @@
           }
         }
       },
-
       {
         "name": "health",
         "method": "GET",
         "path": "/health",
         "description": "Health check",
-
         "response": {
           "type": "object",
           "schema": {
@@ -41,13 +37,11 @@
           }
         }
       },
-
       {
         "name": "echo",
         "method": "POST",
         "path": "/echo",
         "description": "Echo input data",
-
         "request": {
           "type": "object",
           "schema": {
@@ -57,7 +51,6 @@
             }
           }
         },
-
         "response": {
           "type": "object",
           "schema": {

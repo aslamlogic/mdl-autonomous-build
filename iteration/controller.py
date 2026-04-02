@@ -1,127 +1,73 @@
+from copy import deepcopy
 import json
 import os
-import subprocess
-import sys
-from pathlib import Path
-from typing import Any
 
-SPEC_PATH = Path("specs/init.json")
+from engine.bootstrap import build_system
+from iteration.evaluator import evaluate_system
+from iteration.spec_updater import update_spec
 
 
-def fail(message: str) -> None:
-    print(json.dumps({"status": "error", "message": message}, indent=2))
-    sys.exit(1)
+SPEC_PATH = "specs/init.json"
+MAX_ITERATIONS = 5
 
 
-def read_json(path: Path) -> dict:
-    if not path.exists():
-        fail(f"Missing file: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+def _load_spec() -> dict:
+    if not os.path.exists(SPEC_PATH):
+        return {}
+    with open(SPEC_PATH, "r") as f:
+        return json.load(f)
 
 
-def write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+def _save_spec(spec: dict) -> None:
+    with open(SPEC_PATH, "w") as f:
+        json.dump(spec, f, indent=2)
 
 
-def run_build() -> int:
-    result = subprocess.run(["python", "engine/bootstrap.py"])
-    return result.returncode
+def run_controller() -> dict:
+    spec = _load_spec()
 
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        print(f"\n--- ITERATION {iteration} ---")
 
-def run_evaluator(base_url: str) -> dict:
-    result = subprocess.run(
-        ["python", "iteration/evaluator.py", base_url],
-        capture_output=True,
-        text=True,
-    )
+        # 1. Build
+        build_system(spec)
 
-    if result.stdout:
-        try:
-            return json.loads(result.stdout)
-        except Exception:
-            fail("Evaluator output is not valid JSON")
+        # 2. Evaluate
+        evaluation = evaluate_system()
+        print("EVALUATION RESULT:", evaluation)
 
-    fail("Evaluator produced no output")
-
-
-def get_base_url() -> str:
-    url = os.getenv("DEPLOYED_URL", "").strip()
-    if not url:
-        fail("DEPLOYED_URL not set")
-    return url.rstrip("/")
-
-
-def update_spec(spec: dict, evaluation: dict) -> dict:
-    # Deterministic rule-based update (minimal version)
-
-    if evaluation["goal_satisfied"]:
-        return spec
-
-    failing = evaluation.get("failing_endpoints", [])
-
-    endpoints = spec.get("api", {}).get("endpoints", [])
-
-    # Simple deterministic rule:
-    # If endpoint failed → ensure it exists in spec (no-op for now)
-    # Future: could enrich schemas, fix types, etc.
-
-    new_spec = spec.copy()
-    new_spec["last_failure"] = failing
-
-    return new_spec
-
-
-def run_iteration(goal: str, max_iterations: int = 5) -> dict:
-    spec = read_json(SPEC_PATH)
-    base_url = get_base_url()
-
-    history: list[dict[str, Any]] = []
-
-    for i in range(max_iterations):
-        print(f"\nITERATION {i + 1}")
-
-        # Step 1 — Build
-        build_code = run_build()
-        if build_code != 0:
-            return {
-                "status": "build_failed",
-                "iteration": i + 1,
-            }
-
-        # Step 2 — Evaluate
-        evaluation = run_evaluator(base_url)
-        history.append(evaluation)
-
-        if evaluation.get("goal_satisfied"):
+        # 3. Success check
+        if evaluation.get("status") == "success":
+            print("SUCCESS — stopping loop")
             return {
                 "status": "success",
-                "iterations": i + 1,
-                "evaluation": evaluation,
-                "history": history,
+                "iterations": iteration,
+                "goal_satisfied": True,
             }
 
-        # Step 3 — Update spec
-        spec = update_spec(spec, evaluation)
-        write_json(SPEC_PATH, spec)
+        # 4. Update spec (deterministic)
+        print("UPDATING SPEC...")
+        new_spec = update_spec(spec, evaluation)
 
+        # 5. Detect no-op (prevents infinite loop)
+        if new_spec == spec:
+            print("NO CHANGE IN SPEC — stopping to avoid infinite loop")
+            return {
+                "status": "stalled",
+                "iterations": iteration,
+                "goal_satisfied": False,
+            }
+
+        spec = deepcopy(new_spec)
+        _save_spec(spec)
+
+    print("MAX ITERATIONS REACHED — stopping")
     return {
-        "status": "max_iterations_reached",
-        "iterations": max_iterations,
-        "history": history,
+        "status": "failed",
+        "iterations": MAX_ITERATIONS,
+        "goal_satisfied": False,
     }
 
 
-def main() -> None:
-    goal = os.getenv("GOAL", "default_goal")
-    max_iterations = int(os.getenv("MAX_ITERATIONS", "3"))
-
-    result = run_iteration(goal, max_iterations)
-    print(json.dumps(result, indent=2))
-
-    if result["status"] == "success":
-        sys.exit(0)
-    sys.exit(1)
-
-
 if __name__ == "__main__":
-    main()
+    run_controller()

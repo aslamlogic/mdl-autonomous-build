@@ -49,35 +49,49 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def read_spec() -> tuple[Path, dict]:
+def read_spec():
     for path in SPEC_CANDIDATES:
         if path.exists():
             with path.open("r", encoding="utf-8") as f:
                 return path, json.load(f)
-    fail("No spec found.")
+    fail("No spec found")
 
 
-def build_messages(spec_path: Path, spec: dict) -> list[dict]:
+def build_messages(spec_path, spec):
     return [
         {
             "role": "developer",
             "content": (
-                "You are a deterministic code generator. "
-                "Return ONLY valid JSON matching the schema. "
-                "No markdown. No commentary."
+                "You are a deterministic FastAPI generator.\n"
+                "Return ONLY JSON matching the schema.\n"
+                "No markdown. No commentary.\n"
+                "\n"
+                "Requirements:\n"
+                "- Build a FastAPI app\n"
+                "- Use api.endpoints from spec\n"
+                "- Each endpoint must exist\n"
+                "- Responses must use schema.example values\n"
+                "- Output complete runnable files\n"
             ),
         },
         {
             "role": "user",
             "content": (
-                f"Generate a minimal FastAPI app from this spec:\n\n"
-                f"{json.dumps(spec, indent=2)}"
+                f"Specification:\n{json.dumps(spec, indent=2)}\n\n"
+                "Generate:\n"
+                "- main.py\n"
+                "- requirements.txt\n"
+                "\n"
+                "Rules:\n"
+                "- Use FastAPI\n"
+                "- Implement all endpoints\n"
+                "- Return JSON responses based on schema\n"
             ),
         },
     ]
 
 
-def call_openai(messages: list[dict]) -> dict:
+def call_openai(messages):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         fail("OPENAI_API_KEY not set")
@@ -125,7 +139,7 @@ def normalise_content(content: str) -> str:
     return content
 
 
-def validate_files(payload: dict) -> None:
+def validate_files(payload):
     files = payload.get("files")
 
     if not isinstance(files, list) or not files:
@@ -173,7 +187,7 @@ def validate_path(path_str: str) -> Path:
     return path
 
 
-def write_files(payload: dict) -> None:
+def write_files(payload):
     for item in payload["files"]:
         path = validate_path(item["path"])
         content = normalise_content(item["content"])
@@ -184,7 +198,7 @@ def write_files(payload: dict) -> None:
         print(f"WROTE {path}")
 
 
-def main() -> None:
+def main():
     spec_path, spec = read_spec()
     print(f"USING SPEC {spec_path}")
 

@@ -1,87 +1,65 @@
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from copy import deepcopy
 import json
+import uuid
+from pathlib import Path
 
-from engine.bootstrap import build_system
+from iteration.build import build_system
+from iteration.runtime import start_server
 from iteration.evaluator import evaluate_system
 from iteration.spec_updater import update_spec
-from iteration.fault_log import log_faults
-from iteration.git_commit import commit_and_push
 
 
-SPEC_PATH = "specs/init.json"
-MAX_ITERATIONS = 5
-BASE_URL = "http://localhost:8000"
+ROOT = Path(__file__).resolve().parent.parent
+SPECS_DIR = ROOT / "specs"
+LOG_DIR = ROOT / "iteration"
+SPECS_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _load_spec() -> dict:
-    if not os.path.exists(SPEC_PATH):
-        return {}
-    with open(SPEC_PATH, "r") as f:
-        return json.load(f)
+def run_iteration_loop(spec: dict, max_iterations: int = 2) -> dict:
+    logs: list[str] = []
+    build_id = f"build_{uuid.uuid4().hex[:8]}"
+    working_spec = spec
 
+    spec_path = SPECS_DIR / "init.json"
+    spec_path.write_text(json.dumps(working_spec, indent=2), encoding="utf-8")
+    logs.append(f"Spec written to {spec_path}")
 
-def _save_spec(spec: dict) -> None:
-    with open(SPEC_PATH, "w") as f:
-        json.dump(spec, f, indent=2)
+    deployment_url = "http://localhost:8000"
 
+    for iteration in range(1, max_iterations + 1):
+        logs.append(f"--- ITERATION {iteration} ---")
 
-def run_controller() -> dict:
-    spec = _load_spec()
+        logs.append("BUILDING SYSTEM...")
+        build_result = build_system(working_spec)
+        logs.extend(build_result.get("logs", []))
 
-    for iteration in range(1, MAX_ITERATIONS + 1):
-        print(f"\n--- ITERATION {iteration} ---")
+        logs.append("STARTING SERVER...")
+        runtime_result = start_server()
+        logs.extend(runtime_result.get("logs", []))
 
-        # 1. Build
-        build_system(spec)
+        logs.append("EVALUATING SYSTEM...")
+        evaluation = evaluate_system(working_spec)
+        logs.append(f"EVALUATION RESULT: {evaluation}")
 
-        # 2. Evaluate
-        evaluation = evaluate_system(spec, BASE_URL)
-        print("EVALUATION RESULT:", evaluation)
-
-        # 3. Log faults
-        log_faults(spec, evaluation)
-
-        # 4. Success check
         if evaluation.get("status") == "success":
-            print("SUCCESS — stopping loop")
-
-            # ---- COMMIT GENERATED SYSTEM ----
-            commit_and_push()
-
+            logs.append("SYSTEM SATISFIED SPECIFICATION")
             return {
-                "status": "success",
-                "iterations": iteration,
-                "goal_satisfied": True,
+                "build_id": build_id,
+                "message": "Build completed successfully",
+                "deployment_url": deployment_url,
+                "logs": logs,
+                "normalized_spec": working_spec,
             }
 
-        # 5. Update spec
-        print("UPDATING SPEC...")
-        new_spec = update_spec(spec, evaluation)
+        logs.append("UPDATING SPEC...")
+        working_spec = update_spec(working_spec, evaluation)
+        spec_path.write_text(json.dumps(working_spec, indent=2), encoding="utf-8")
+        logs.append("SPEC UPDATED")
 
-        # 6. Detect no-op
-        if new_spec == spec:
-            print("NO CHANGE IN SPEC — stopping to avoid infinite loop")
-            return {
-                "status": "stalled",
-                "iterations": iteration,
-                "goal_satisfied": False,
-            }
-
-        spec = deepcopy(new_spec)
-        _save_spec(spec)
-
-    print("MAX ITERATIONS REACHED — stopping")
     return {
-        "status": "failed",
-        "iterations": MAX_ITERATIONS,
-        "goal_satisfied": False,
+        "build_id": build_id,
+        "message": "Build completed but did not fully converge within iteration limit",
+        "deployment_url": deployment_url,
+        "logs": logs,
+        "normalized_spec": working_spec,
     }
-
-
-if __name__ == "__main__":
-    run_controller()

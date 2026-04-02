@@ -1,0 +1,3 @@
+{
+  "goal": "ensure the API is contract-driven and includes a typed POST /echo endpoint"
+}

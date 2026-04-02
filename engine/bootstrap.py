@@ -7,10 +7,12 @@ from pathlib import Path
 import requests
 
 CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions"
+
 SPEC_CANDIDATES = [
     Path("specs/app.json"),
     Path("specs/init.json"),
 ]
+
 FORBIDDEN_PREFIXES = (
     ".git/",
     ".github/workflows/",
@@ -50,46 +52,35 @@ def fail(message: str) -> None:
 def read_spec() -> tuple[Path, dict]:
     for path in SPEC_CANDIDATES:
         if path.exists():
-            with path.open("r", encoding="utf-8") as handle:
-                return path, json.load(handle)
-    fail("No spec found. Expected specs/app.json or specs/init.json.")
+            with path.open("r", encoding="utf-8") as f:
+                return path, json.load(f)
+    fail("No spec found.")
 
 
 def build_messages(spec_path: Path, spec: dict) -> list[dict]:
-    developer_text = (
-        "You are a deterministic software file generator. "
-        "Return only JSON matching the supplied schema. "
-        "Do not include markdown fences. "
-        "Do not include commentary. "
-        "Generate complete file contents only."
-    )
-
-    user_text = (
-        f"Specification source: {spec_path.as_posix()}\n"
-        "Generate a minimal, runnable FastAPI application from this specification.\n"
-        "Rules:\n"
-        "1. Return only files.\n"
-        "2. Do not generate .github/workflows files.\n"
-        "3. Keep output minimal and executable.\n"
-        "4. If requirements.txt is needed, include only necessary packages.\n"
-        "5. Main entrypoint must be main.py.\n"
-        "6. The service must expose exactly the endpoints defined in the spec.\n"
-        "7. Use plain Python and FastAPI only.\n\n"
-        f"SPEC:\n{json.dumps(spec, indent=2, ensure_ascii=False)}"
-    )
-
     return [
-        {"role": "developer", "content": developer_text},
-        {"role": "user", "content": user_text},
+        {
+            "role": "developer",
+            "content": (
+                "You are a deterministic code generator. "
+                "Return ONLY valid JSON matching the schema. "
+                "No markdown. No commentary."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Generate a minimal FastAPI app from this spec:\n\n"
+                f"{json.dumps(spec, indent=2)}"
+            ),
+        },
     ]
 
 
 def call_openai(messages: list[dict]) -> dict:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        fail("OPENAI_API_KEY is not set.")
-
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        fail("OPENAI_API_KEY not set")
 
     response = requests.post(
         CHAT_COMPLETIONS_URL,
@@ -98,7 +89,7 @@ def call_openai(messages: list[dict]) -> dict:
             "Content-Type": "application/json",
         },
         json={
-            "model": model,
+            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             "messages": messages,
             "response_format": {
                 "type": "json_schema",
@@ -110,82 +101,101 @@ def call_openai(messages: list[dict]) -> dict:
     )
 
     if response.status_code != 200:
-        fail(f"OpenAI API call failed: {response.status_code} {response.text}")
+        fail(f"OpenAI error: {response.text}")
 
     data = response.json()
 
     try:
         content = data["choices"][0]["message"]["content"]
-    except Exception as exc:
-        fail(f"Unexpected OpenAI response format: {exc}")
-
-    try:
         return json.loads(content)
-    except json.JSONDecodeError as exc:
-        fail(f"Model returned invalid JSON: {exc}\nRaw content:\n{content}")
+    except Exception as e:
+        fail(f"Invalid JSON from model: {e}")
 
 
 def normalise_content(content: str) -> str:
     content = content.strip()
 
-    fenced_match = re.fullmatch(r"```[a-zA-Z0-9_-]*\n(.*)\n```", content, flags=re.DOTALL)
-    if fenced_match:
-        content = fenced_match.group(1)
+    fenced = re.fullmatch(r"```[a-zA-Z]*\n(.*)\n```", content, re.DOTALL)
+    if fenced:
+        content = fenced.group(1)
 
     if "```" in content:
-        fail("Generated content still contains markdown fences.")
+        fail("Markdown fence detected")
 
     return content
 
 
-def validate_path(path_str: str) -> Path:
-    if not path_str or not isinstance(path_str, str):
-        fail("File path is missing or invalid.")
+def validate_files(payload: dict) -> None:
+    files = payload.get("files")
 
-    if any(path_str.startswith(prefix) for prefix in FORBIDDEN_PREFIXES):
-        fail(f"Forbidden output path: {path_str}")
+    if not isinstance(files, list) or not files:
+        fail("Validation failed: no files returned")
+
+    for item in files:
+        path = item.get("path")
+        content = item.get("content")
+
+        if not path or not isinstance(path, str):
+            fail("Validation failed: invalid path")
+
+        if not content or not isinstance(content, str):
+            fail(f"Validation failed: empty content in {path}")
+
+        if "```" in content:
+            fail(f"Validation failed: markdown in {path}")
+
+        if len(content.strip()) < 10:
+            fail(f"Validation failed: content too short in {path}")
+
+        if path.endswith(".py"):
+            if "FastAPI" not in content:
+                fail(f"Validation failed: FastAPI missing in {path}")
+
+            if "app = FastAPI()" not in content:
+                fail(f"Validation failed: app instance missing in {path}")
+
+            if "@app.get" not in content:
+                fail(f"Validation failed: no endpoints in {path}")
+
+
+def validate_path(path_str: str) -> Path:
+    if any(path_str.startswith(p) for p in FORBIDDEN_PREFIXES):
+        fail(f"Forbidden path: {path_str}")
 
     path = Path(path_str)
 
     if path.is_absolute():
-        fail(f"Absolute paths are not allowed: {path_str}")
+        fail("Absolute paths not allowed")
 
-    resolved = path.as_posix()
-    if resolved.startswith("../") or "/../" in resolved or resolved == "..":
-        fail(f"Path traversal is not allowed: {path_str}")
+    if ".." in path.parts:
+        fail("Path traversal detected")
 
     return path
 
 
 def write_files(payload: dict) -> None:
-    files = payload.get("files")
-    if not isinstance(files, list) or not files:
-        fail("No files returned.")
+    for item in payload["files"]:
+        path = validate_path(item["path"])
+        content = normalise_content(item["content"])
 
-    for item in files:
-        if not isinstance(item, dict):
-            fail("Each file entry must be an object.")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
 
-        raw_path = item.get("path")
-        raw_content = item.get("content")
-
-        if not isinstance(raw_content, str):
-            fail(f"Invalid content for file: {raw_path}")
-
-        output_path = validate_path(raw_path)
-        content = normalise_content(raw_content)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(content, encoding="utf-8")
-        print(f"WROTE {output_path.as_posix()}")
+        print(f"WROTE {path}")
 
 
 def main() -> None:
     spec_path, spec = read_spec()
-    print(f"USING SPEC {spec_path.as_posix()}")
+    print(f"USING SPEC {spec_path}")
+
     messages = build_messages(spec_path, spec)
+
     payload = call_openai(messages)
+
+    validate_files(payload)
+
     write_files(payload)
+
     print("BOOTSTRAP COMPLETE")
 
 

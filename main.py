@@ -3,25 +3,19 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class RootResponse(BaseModel):
-    message: str = "Welcome to the meta-dev API!"
-
-class HealthResponse(BaseModel):
-    status: str = "healthy"
-
 class EchoRequest(BaseModel):
-    text: str = "hello"
+    text: str
 
 class EchoResponse(BaseModel):
-    echo: str = "hello"
+    echo: str
 
-@app.get("/", response_model=RootResponse)
+@app.get("/")
 async def root():
-    return RootResponse()
+    return {"message": "Welcome to the meta-dev API!"}
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 async def health():
-    return HealthResponse()
+    return {"status": "healthy"}
 
 @app.post("/echo", response_model=EchoResponse)
 async def echo(request: EchoRequest):

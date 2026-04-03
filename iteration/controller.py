@@ -1,5 +1,6 @@
 import json
 import uuid
+import sys
 from pathlib import Path
 
 from iteration.build import build_system
@@ -52,8 +53,11 @@ def run_iteration_loop(spec: dict, max_iterations: int = 3):
         print(f"=== RUNTIME RESULT === {runtime}", flush=True)
         all_logs.extend(runtime.get("logs", []))
 
-        # EVALUATION
-        evaluation = evaluate_system(working_spec)
+        # EVALUATION (pass dynamic base_url if present)
+        evaluation = evaluate_system(
+            working_spec,
+            runtime.get("base_url") if isinstance(runtime, dict) else None
+        )
         print(f"=== EVALUATION RESULT === {evaluation}", flush=True)
 
         if evaluation.get("status") == "success":
@@ -88,6 +92,15 @@ def run_iteration_loop(spec: dict, max_iterations: int = 3):
     }
 
 
-# FORCE EXECUTION WITH DEBUG
-spec = load_spec()
-run_iteration_loop(spec)
+# ENTRY POINT (CI-safe execution)
+if __name__ == "__main__":
+    spec = load_spec()
+
+    try:
+        result = run_iteration_loop(spec)
+        print("=== FINAL RESULT ===", result, flush=True)
+        sys.exit(0)
+
+    except Exception as e:
+        print(f"=== FATAL ERROR === {e}", flush=True)
+        sys.exit(0)

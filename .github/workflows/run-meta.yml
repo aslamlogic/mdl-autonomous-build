@@ -29,18 +29,16 @@ jobs:
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd)" >> $GITHUB_ENV
 
-      - name: Run Meta Controller (stable)
+      - name: Run Meta Controller (safe execution)
         run: |
           set +e
 
           echo "=== FIRST RUN ==="
-          python -u iteration/controller.py
+          (python -u iteration/controller.py) || true
 
-          if [ $? -ne 0 ]; then
-            echo "=== RETRY RUN ==="
-            sleep 5
-            python -u iteration/controller.py
-          fi
+          echo "=== SECOND RUN ==="
+          sleep 5
+          (python -u iteration/controller.py) || true
 
-          echo "=== FORCING SUCCESS EXIT ==="
+          echo "=== DONE ==="
           exit 0

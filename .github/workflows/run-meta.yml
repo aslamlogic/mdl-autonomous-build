@@ -13,11 +13,9 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -29,16 +27,16 @@ jobs:
       - name: Set PYTHONPATH
         run: echo "PYTHONPATH=${PYTHONPATH}:$(pwd)" >> $GITHUB_ENV
 
-      - name: Run Meta Controller (safe execution)
+      - name: Run Meta Controller (safe)
+        shell: bash
         run: |
           set +e
 
-          echo "=== FIRST RUN ==="
-          (python -u iteration/controller.py) || true
-
-          echo "=== SECOND RUN ==="
-          sleep 5
-          (python -u iteration/controller.py) || true
+          for i in 1 2; do
+            echo "=== RUN $i ==="
+            python -u iteration/controller.py
+            sleep 5
+          done
 
           echo "=== DONE ==="
           exit 0

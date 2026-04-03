@@ -3,7 +3,7 @@
   "endpoints": [
     {
       "method": "GET",
-      "path": "/health",
+      "path": "/wrong",
       "response": {
         "status": "number"
       }

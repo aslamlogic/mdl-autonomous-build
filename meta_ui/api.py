@@ -1,6 +1,4 @@
 from fastapi import FastAPI
-from iteration.controller import main
-
 app = FastAPI()
 
 @app.get("/health")
@@ -8,6 +6,7 @@ def health():
     return {"status": "ok"}
 
 @app.post("/runs")
-def run():
+def start_build():
+    from iteration.controller import main
     main()
     return {"status": "started"}

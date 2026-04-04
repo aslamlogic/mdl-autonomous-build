@@ -17,7 +17,7 @@ def load_spec():
         if not p.exists():
             return {}
         return json.loads(p.read_text())
-    except:
+    except Exception:
         return {}
 
 
@@ -33,15 +33,30 @@ def run_iteration_loop(spec: dict, max_iterations: int = 3):
         evaluation = evaluate_system(working_spec)
 
         if evaluation.get("status") == "success":
-            return {"success": True, "evaluation": evaluation, "logs": logs}
+            return {
+                "build_id": build_id,
+                "success": True,
+                "evaluation": evaluation,
+                "logs": logs,
+            }
 
         updated = update_spec(working_spec, evaluation)
         if updated == working_spec:
-            return {"success": False, "evaluation": evaluation, "logs": logs}
+            return {
+                "build_id": build_id,
+                "success": False,
+                "evaluation": evaluation,
+                "logs": logs,
+            }
 
         working_spec = updated
 
-    return {"success": False, "evaluation": evaluation, "logs": logs}
+    return {
+        "build_id": build_id,
+        "success": False,
+        "evaluation": evaluation,
+        "logs": logs,
+    }
 
 
 if __name__ == "__main__":
@@ -49,5 +64,5 @@ if __name__ == "__main__":
         result = run_iteration_loop(load_spec())
         print(result)
         sys.exit(0)
-    except:
+    except Exception:
         sys.exit(0)

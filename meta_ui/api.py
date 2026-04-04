@@ -1,7 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from typing import Any
 
 app = FastAPI()
+
+
+@app.get("/")
+def root():
+    return FileResponse("meta_ui/static/index.html")
 
 
 @app.get("/health")
@@ -15,20 +21,27 @@ def runs():
 
 
 @app.post("/run")
-def run_system() -> Any:
+async def run_system(request: Request) -> Any:
     try:
-        # Lazy import to avoid breaking API boot
+        body = await request.json()
+        repo = body.get("repo")
+
+        if not repo:
+            return {"status": "error", "error": "repo not provided"}
+
+        # Lazy import (safe)
         from iteration.controller import main
 
-        result = main()
+        result = main(repo)
 
         return {
             "status": "executed",
+            "repo": repo,
             "result": result
         }
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "error": str(e)}
+        )

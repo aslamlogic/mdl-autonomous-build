@@ -7,18 +7,37 @@ def build_system(spec: dict):
     logs = []
 
     try:
-        code = generate_code(spec)
-        logs.append("Code generated")
+        try:
+            code = generate_code(spec)
+            logs.append("Code generated")
+        except Exception as e:
+            return {
+                "status": "failure",
+                "logs": [f"LLM FAILURE: {str(e)}"]
+            }
 
-        # Only validate what must exist
+        # Empty or bad response protection
+        if not code or len(code.strip()) < 20:
+            return {
+                "status": "failure",
+                "logs": ["LLM returned empty or invalid code"]
+            }
+
+        # Ensure FastAPI presence (minimal guard)
         if "FastAPI" not in code:
-            raise ValueError("Missing FastAPI import")
+            return {
+                "status": "failure",
+                "logs": ["Generated code missing FastAPI"]
+            }
 
-        # Compile = real validation (only one that matters)
+        # Compile check (real validation)
         try:
             compile(code, "<generated_app>", "exec")
         except Exception as e:
-            raise ValueError(f"Syntax error: {e}")
+            return {
+                "status": "failure",
+                "logs": [f"Syntax error: {str(e)}"]
+            }
 
         path = write_app(code)
         logs.append(f"Code written to {path}")
@@ -29,10 +48,10 @@ def build_system(spec: dict):
         }
 
     except Exception as e:
-        logs.append(f"BUILD FAILURE: {str(e)}")
-        logs.append(traceback.format_exc())
-
         return {
             "status": "failure",
-            "logs": logs,
+            "logs": [
+                f"UNEXPECTED BUILD ERROR: {str(e)}",
+                traceback.format_exc()
+            ]
         }

@@ -4,10 +4,8 @@ import sys
 from pathlib import Path
 
 from iteration.build import build_system
-from iteration.runtime import start_server
 from iteration.evaluator import evaluate_system
 from iteration.spec_updater import update_spec
-
 
 ROOT = Path(__file__).resolve().parent.parent
 SPECS_DIR = ROOT / "specs"
@@ -15,92 +13,41 @@ SPECS_DIR = ROOT / "specs"
 
 def load_spec():
     try:
-        spec_path = SPECS_DIR / "init.json"
-        print(f"=== LOADING SPEC FROM: {spec_path}", flush=True)
-
-        if not spec_path.exists():
-            print("=== SPEC FILE NOT FOUND — USING EMPTY SPEC ===", flush=True)
+        p = SPECS_DIR / "init.json"
+        if not p.exists():
             return {}
-
-        content = spec_path.read_text()
-        print(f"=== RAW SPEC CONTENT === {content}", flush=True)
-
-        return json.loads(content)
-
-    except Exception as e:
-        print(f"=== ERROR LOADING SPEC: {e} ===", flush=True)
+        return json.loads(p.read_text())
+    except:
         return {}
 
 
 def run_iteration_loop(spec: dict, max_iterations: int = 3):
-    print("=== CONTROLLER STARTED ===", flush=True)
-    print(f"=== INPUT SPEC === {spec}", flush=True)
-
     build_id = f"build_{uuid.uuid4().hex[:8]}"
     working_spec = spec
-    all_logs = []
+    logs = []
 
-    for iteration in range(1, max_iterations + 1):
-        print(f"=== ITERATION {iteration} START ===", flush=True)
-
-        # BUILD
+    for _ in range(max_iterations):
         build = build_system(working_spec)
-        print(f"=== BUILD RESULT === {build}", flush=True)
-        all_logs.extend(build.get("logs", []))
+        logs.extend(build.get("logs", []))
 
-        # RUNTIME
-        runtime = start_server()
-        print(f"=== RUNTIME RESULT === {runtime}", flush=True)
-        all_logs.extend(runtime.get("logs", []))
-
-        # EVALUATION (pass dynamic base_url if present)
-        evaluation = evaluate_system(
-            working_spec,
-            runtime.get("base_url") if isinstance(runtime, dict) else None
-        )
-        print(f"=== EVALUATION RESULT === {evaluation}", flush=True)
+        evaluation = evaluate_system(working_spec)
 
         if evaluation.get("status") == "success":
-            print("=== SUCCESS ===", flush=True)
-            return {
-                "build_id": build_id,
-                "success": True,
-                "evaluation": evaluation,
-                "logs": all_logs,
-            }
+            return {"success": True, "evaluation": evaluation, "logs": logs}
 
-        # UPDATE SPEC
         updated = update_spec(working_spec, evaluation)
-
         if updated == working_spec:
-            print("=== NO SPEC CHANGE — STOPPING ===", flush=True)
-            return {
-                "build_id": build_id,
-                "success": False,
-                "evaluation": evaluation,
-                "logs": all_logs,
-            }
+            return {"success": False, "evaluation": evaluation, "logs": logs}
 
         working_spec = updated
-        print(f"=== UPDATED SPEC === {working_spec}", flush=True)
 
-    return {
-        "build_id": build_id,
-        "success": False,
-        "evaluation": evaluation,
-        "logs": all_logs,
-    }
+    return {"success": False, "evaluation": evaluation, "logs": logs}
 
 
-# ENTRY POINT (CI-safe execution)
 if __name__ == "__main__":
-    spec = load_spec()
-
     try:
-        result = run_iteration_loop(spec)
-        print("=== FINAL RESULT ===", result, flush=True)
+        result = run_iteration_loop(load_spec())
+        print(result)
         sys.exit(0)
-
-    except Exception as e:
-        print(f"=== FATAL ERROR === {e}", flush=True)
+    except:
         sys.exit(0)

@@ -1,31 +1,37 @@
-name: Meta Build System
+name: Meta Build and Deploy
 
 on:
   push:
-    branches: [main]
-
-concurrency:
-  group: meta-build
-  cancel-in-progress: true
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
-  run-meta:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Set PYTHONPATH
-        run: echo "PYTHONPATH=$PYTHONPATH:$(pwd)" >> $GITHUB_ENV
+      - name: Apply Meta System Patch
+        run: python meta_apply_full_system.py
 
-      - name: Run Meta Controller
-        run: python -u iteration/controller.py
+      - name: Run API smoke test
+        run: |
+          nohup uvicorn meta_ui.api:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl http://127.0.0.1:8000/health
+
+      - name: Run iteration engine
+        run: python -c "from iteration.controller import main; main()"

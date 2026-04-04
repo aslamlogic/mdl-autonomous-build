@@ -2,7 +2,7 @@ import importlib
 import sys
 from typing import Any, Dict, List
 from fastapi.testclient import TestClient
-from iteration.schema_validator import validate_json_schema
+from iteration.schema_validator import validate_schema
 
 
 def _load_app():
@@ -47,7 +47,7 @@ def evaluate_system(spec: Dict[str, Any]) -> Dict[str, Any]:
                 r = client.delete(path)
             else:
                 raise ValueError("bad method")
-        except Exception as e:
+        except Exception:
             failing_endpoints.append(path)
             schema_mismatches.append({"issue": "call_failed"})
             continue
@@ -59,12 +59,12 @@ def evaluate_system(spec: Dict[str, Any]) -> Dict[str, Any]:
 
         try:
             data = r.json()
-        except:
+        except Exception:
             failing_endpoints.append(path)
             schema_mismatches.append({"issue": "invalid_json"})
             continue
 
-        mismatches = validate_json_schema(expected, data)
+        mismatches = validate_schema(expected, data)
         if mismatches:
             failing_endpoints.append(path)
             schema_mismatches.append({"issue": "schema", "m": mismatches})

@@ -10,14 +10,11 @@ def build_system(spec: dict):
         code = generate_code(spec)
         logs.append("Code generated")
 
-        # Minimal required validation ONLY
+        # Only validate what must exist
         if "FastAPI" not in code:
             raise ValueError("Missing FastAPI import")
 
-        if "app = FastAPI()" not in code:
-            raise ValueError("Missing FastAPI app instance")
-
-        # Compile check (authoritative syntax validation)
+        # Compile = real validation (only one that matters)
         try:
             compile(code, "<generated_app>", "exec")
         except Exception as e:

@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: meta-dev-launcher-web
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn meta_ui.api:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  - type: worker
+    name: meta-dev-launcher-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -c \"from iteration.controller import run_iteration_loop, load_spec; run_iteration_loop(load_spec())\""
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHONUNBUFFERED
+        value: "1"

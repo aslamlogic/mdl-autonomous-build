@@ -1,5 +1,15 @@
+import sys
 import json
 from pathlib import Path
+
+# =========================
+# FORCE CORRECT EVALUATOR LOAD
+# =========================
+sys.modules.pop("iteration.evaluator", None)
+
+import iteration.evaluator as evaluator
+evaluate_system = evaluator.evaluate_system
+
 
 # =========================
 # GENERATOR (embedded)
@@ -53,22 +63,15 @@ def echo(payload: dict):
 
 
 # =========================
-# EVALUATOR IMPORT
-# =========================
-
-from iteration.evaluator import evaluate_system
-
-
-# =========================
 # CONTROLLER ENTRY POINT
 # =========================
 
 def run_iteration_loop(spec: dict):
     iterations = []
 
-    for i in range(1, 2):  # single iteration for now
+    for i in range(1, 2):  # single iteration
 
-        # STEP 1: GENERATE APP
+        # STEP 1: GENERATE
         generation_result = generate_app(spec)
 
         if generation_result["status"] != "success":

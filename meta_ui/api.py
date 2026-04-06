@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
-from typing import Any
 import os
+from typing import Any
 
 app = FastAPI()
 
@@ -24,31 +24,19 @@ def runs():
 @app.get("/env")
 def env():
     return {
-        "META_GITHUB_TOKEN": bool(os.getenv("META_GITHUB_TOKEN"))
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "log_level": os.getenv("LOG_LEVEL", "unknown")
     }
 
 
-@app.post("/run")
-async def run_system(request: Request) -> Any:
+@app.post("/runs")
+def run_system():
     try:
-        body = await request.json()
-        repo = body.get("repo")
-
-        if not repo:
-            return {"status": "error", "error": "repo not provided"}
-
-        from iteration.controller import main
-
-        result = main(repo)
-
-        return {
-            "status": "executed",
-            "repo": repo,
-            "result": result
-        }
-
+        from iteration.controller import run_iteration_loop, load_spec
+        result = run_iteration_loop(load_spec())
+        return JSONResponse(content=result)
     except Exception as e:
         return JSONResponse(
-            status_code=500,
-            content={"status": "error", "error": str(e)}
+            content={"status": "error", "message": str(e)},
+            status_code=500
         )

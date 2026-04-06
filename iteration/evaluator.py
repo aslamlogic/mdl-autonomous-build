@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 
 
 def evaluate_system(app, spec):
+    """
+    Deterministic evaluator for generated FastAPI app.
+    No httpx usage. No 'app=' argument misuse.
+    """
+
     result = {
         "status": "failure",
         "logs": [],
@@ -12,22 +17,27 @@ def evaluate_system(app, spec):
     }
 
     try:
+        # CORRECT client
         client = TestClient(app)
 
-        # Basic health check
+        # --- Health check ---
         response = client.get("/health")
 
         if response.status_code != 200:
             result["logs"].append(f"Health check failed: {response.status_code}")
             return result
 
-        data = response.json()
-
-        if data.get("status") != "ok":
-            result["logs"].append("Health endpoint returned invalid response")
+        try:
+            data = response.json()
+        except Exception:
+            result["logs"].append("Health endpoint did not return JSON")
             return result
 
-        # If we reach here → pass
+        if data.get("status") != "ok":
+            result["logs"].append("Health endpoint returned invalid payload")
+            return result
+
+        # --- Passed ---
         result["status"] = "success"
         return result
 

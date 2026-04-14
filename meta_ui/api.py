@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Request
 from iteration.controller import run_iteration_loop
 
 app = FastAPI()
@@ -6,18 +6,22 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "ready"}
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+    return {"status": "meta_dev_launcher_running"}
 
 
 @app.post("/run")
-def run(spec: dict = Body(...)):
-    print("[DEBUG SPEC RECEIVED]", spec)
+async def run(request: Request):
+    try:
+        spec = await request.json()
 
-    result = run_iteration_loop(spec)
+        print("[DEBUG SPEC RECEIVED]", spec)
 
-    return result
+        result = run_iteration_loop(spec)
+
+        return result
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }

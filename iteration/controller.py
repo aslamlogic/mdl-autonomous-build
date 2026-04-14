@@ -4,9 +4,11 @@ import sys
 from pathlib import Path
 
 from iteration.generator import generate_app
+from iteration.evaluator import evaluate_system
 
 
 GENERATED_APP_PATH = Path("generated_app/main.py")
+MAX_ITERATIONS = 3
 
 
 def load_generated_app():
@@ -28,7 +30,7 @@ def load_generated_app():
         spec.loader.exec_module(module)
 
         if not hasattr(module, "app"):
-            return None, "LOAD_ERROR: no app object"
+            return None, "LOAD_ERROR: generated_app.main has no 'app'"
 
         return module.app, None
 
@@ -36,85 +38,61 @@ def load_generated_app():
         return None, f"LOAD_ERROR: {str(e)}"
 
 
-def load_evaluator():
-    module_name = "iteration.evaluator"
-
-    if module_name in sys.modules:
-        del sys.modules[module_name]
-
-    import iteration.evaluator as evaluator
-    return evaluator.evaluate_system
-
-
-def update_spec(spec, evaluation):
-    failing = evaluation.get("failing_endpoints", [])
-
-    if not failing:
-        return spec
-
-    new_endpoints = []
-
-    for ep in spec.get("endpoints", []):
-        identifier = f"{ep.get('method')} {ep.get('path')}"
-        if identifier not in failing:
-            new_endpoints.append(ep)
-
-    return {"endpoints": new_endpoints}
-
-
 def run_iteration_loop(spec: dict):
-    print("[DEBUG CONTROLLER SPEC]", spec)
-
     iterations = []
-    max_iterations = 3
 
     try:
-        evaluate_system = load_evaluator()
+        for i in range(1, MAX_ITERATIONS + 1):
 
-        for i in range(max_iterations):
-            print(f"[ITERATION] Starting iteration {i+1}")
+            print(f"[ITERATION] Starting iteration {i}")
 
-            generation_result = generate_app(spec)
+            # STEP 1 — generate
+            gen = generate_app(spec)
 
-            if generation_result.get("status") != "success":
+            if gen.get("status") != "success":
                 return {
                     "status": "failed",
                     "stage": "generation",
-                    "error": generation_result
+                    "error": gen
                 }
 
+            # STEP 2 — load
             app, load_error = load_generated_app()
 
             if load_error:
-                return {
-                    "status": "failed",
-                    "stage": "load",
-                    "error": load_error
+                evaluation = {
+                    "status": "failure",
+                    "logs": [load_error],
+                    "failing_endpoints": [],
+                    "schema_mismatches": []
                 }
+                iter_status = "failed"
 
-            print("[DEBUG BEFORE EVAL]", spec)
+            else:
+                # STEP 3 — evaluate
+                print("[DEBUG BEFORE EVAL]", spec)
 
-            evaluation = evaluate_system(app, spec)
+                evaluation = evaluate_system(app, spec)
 
-            status = "success" if evaluation.get("status") == "success" else "failed"
+                iter_status = "success" if evaluation["status"] == "success" else "failed"
 
             iterations.append({
-                "iteration": i + 1,
-                "status": status,
+                "iteration": i,
+                "status": iter_status,
                 "evaluation": evaluation
             })
 
-            print(f"[ITERATION] Completed iteration {i+1} with status: {status}")
+            print(f"[ITERATION] Completed iteration {i} with status: {iter_status}")
 
-            if status == "success":
-                print(f"[ITERATION] Converged at iteration {i+1}")
+            # 🔴 CORRECT convergence logic
+            if evaluation["status"] == "success":
+                print(f"[ITERATION] Converged at iteration {i}")
                 return {
                     "status": "converged",
                     "iterations": iterations
                 }
 
-            spec = update_spec(spec, evaluation)
-
+        # 🔴 ONLY reached if ALL iterations failed
         print("[ITERATION] Max iterations reached")
 
         return {

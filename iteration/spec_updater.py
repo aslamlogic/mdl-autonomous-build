@@ -1,24 +1,24 @@
-def update_spec(spec: dict, evaluation: dict):
-    """
-    Deterministic correction:
-    If endpoint fails, replace the spec with the one endpoint
-    the current system knows how to satisfy.
-    """
+def update_spec(spec, evaluation):
+    new_spec = {"endpoints": []}
 
-    failing = evaluation.get("failing_endpoints", [])
+    for ep in spec.get("endpoints", []):
+        method = ep.get("method", "")
+        path = ep.get("path", "")
 
-    if not failing:
-        return spec
+        # Fix invalid methods
+        if isinstance(method, str):
+            method = method.upper()
 
-    return {
-        "name": spec.get("name", "corrected_api"),
-        "endpoints": [
-            {
-                "method": "GET",
-                "path": "/health",
-                "response": {
-                    "status": "number"
-                }
-            }
-        ]
-    }
+        # Basic fallback
+        if method not in {"GET", "POST", "PUT", "DELETE"}:
+            method = "GET"
+
+        if not path.startswith("/"):
+            path = f"/{path}"
+
+        new_spec["endpoints"].append({
+            "method": method,
+            "path": path
+        })
+
+    return new_spec

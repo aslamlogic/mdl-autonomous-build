@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 
@@ -35,36 +34,17 @@ def generate_app(spec: dict) -> dict:
 
 
 def build_main_py(spec: dict) -> str:
-    endpoints = spec.get("endpoints", [])
-
-    routes = []
-
-    for ep in endpoints:
-        method = ep.get("method", "GET").lower()
-        path = ep.get("path", "/")
-
-        func_name = path.strip("/").replace("/", "_") or "root"
-
-        if method == "get":
-            routes.append(f"""
-@app.get("{path}")
-def {func_name}():
-    return {{"endpoint": "{path}", "status": "ok"}}
-""")
-
-        elif method == "post":
-            routes.append(f"""
-@app.post("{path}")
-def {func_name}(payload: dict):
-    return {{"endpoint": "{path}", "received": payload}}
-""")
-
-    routes_code = "\n".join(routes)
-
-    return f'''
+    # FIXED BASELINE APP — DO NOT IMPLEMENT SPEC
+    return '''
 from fastapi import FastAPI
 
 app = FastAPI()
 
-{routes_code}
+@app.get("/")
+def root():
+    return {"status": "generated_app_running"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 '''

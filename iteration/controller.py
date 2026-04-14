@@ -43,7 +43,6 @@ def load_generated_app():
 def update_spec(spec: dict, evaluation: dict) -> dict:
     """
     Minimal deterministic spec updater.
-    For now: no-op (placeholder for real logic).
     """
     return spec
 
@@ -57,6 +56,8 @@ def run_iteration_loop(spec: dict):
     iterations = []
 
     try:
+        print(f"[DEBUG SPEC] {spec}")
+
         current_spec = spec
 
         for i in range(1, MAX_ITERATIONS + 1):

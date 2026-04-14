@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from typing import Dict, Any
+
 from iteration.controller import run_iteration_loop
 
 app = FastAPI()
@@ -15,10 +17,9 @@ def health():
 
 
 @app.post("/run")
-def run():
-    # minimal valid spec (required by controller)
-    spec = {}
-
+def run(spec: Dict[str, Any]):
+    """
+    Accepts a spec payload and runs the iteration loop.
+    """
     result = run_iteration_loop(spec)
-
     return result

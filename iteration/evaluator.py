@@ -7,7 +7,7 @@ VALID_HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"
 
 
 # ============================================================
-# NORMALISATION LAYER
+# NORMALISATION
 # ============================================================
 
 def normalize_endpoint_spec(endpoint: Dict[str, Any]) -> Dict[str, Any]:
@@ -23,10 +23,7 @@ def normalize_endpoint_spec(endpoint: Dict[str, Any]) -> Dict[str, Any]:
     if not path.startswith("/"):
         path = "/" + path
 
-    return {
-        "method": method,
-        "path": path
-    }
+    return {"method": method, "path": path}
 
 
 def normalize_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -36,22 +33,52 @@ def normalize_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ============================================================
-# MAIN ENTRYPOINT (COMPATIBLE WITH CONTROLLER)
+# ASGI VALIDATION (NEW — CRITICAL)
+# ============================================================
+
+def validate_app_object(app):
+    """
+    Ensures app is a valid ASGI callable (FastAPI/Starlette)
+    """
+    if not callable(app):
+        return False, "app_not_callable"
+
+    # Basic ASGI signature check
+    try:
+        # Check it has __call__ with expected args
+        if not hasattr(app, "__call__"):
+            return False, "app_missing_call"
+
+    except Exception:
+        return False, "app_invalid"
+
+    return True, None
+
+
+# ============================================================
+# MAIN ENTRYPOINT
 # ============================================================
 
 def evaluate_app(app, spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Supports BOTH:
-    - evaluate_app(app)
-    - evaluate_app(app, spec)
-    """
 
     try:
-        # ------------------------------------------
-        # Handle missing spec (CRITICAL FIX)
-        # ------------------------------------------
+        # ---------------------------
+        # APP VALIDATION FIRST
+        # ---------------------------
+        is_valid, reason = validate_app_object(app)
+
+        if not is_valid:
+            return {
+                "status": "failure",
+                "logs": [f"APP VALIDATION FAIL → {reason}"],
+                "failing_endpoints": [],
+                "schema_mismatches": []
+            }
+
+        # ---------------------------
+        # SPEC FALLBACK
+        # ---------------------------
         if spec is None:
-            # Fallback minimal spec to allow system to proceed
             spec = {
                 "endpoints": [
                     {"method": "GET", "path": "/health"}
@@ -69,9 +96,6 @@ def evaluate_app(app, spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             method = endpoint["method"]
             path = endpoint["path"]
 
-            # ---------------------------
-            # METHOD VALIDATION
-            # ---------------------------
             if method not in VALID_HTTP_METHODS:
                 failing_endpoints.append({
                     "method": method,
@@ -81,9 +105,6 @@ def evaluate_app(app, spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                 logs.append(f"{method} {path} → FAIL (unsupported method)")
                 continue
 
-            # ---------------------------
-            # RUNTIME TEST
-            # ---------------------------
             try:
                 response = client.request(method, path)
 
@@ -103,7 +124,7 @@ def evaluate_app(app, spec: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                     "path": path,
                     "reason": "runtime_error"
                 })
-                logs.append(f"{method} {path} → FAIL (runtime error: {str(e)})")
+                logs.append(f"{method} {path} → FAIL ({str(e)})")
 
         if failing_endpoints:
             return {

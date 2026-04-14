@@ -4,8 +4,9 @@ from iteration.spec_updater import update_spec
 
 
 def run_iteration_loop(spec, max_iterations=3):
-    iterations = []
+    print("🔥 NEW CONTROLLER ACTIVE 🔥")
 
+    iterations = []
     current_spec = spec
 
     for i in range(1, max_iterations + 1):
@@ -36,8 +37,8 @@ def run_iteration_loop(spec, max_iterations=3):
                 "iterations": iterations
             }
 
-        # 4. 🔴 CRITICAL: update spec for next iteration
-        print(f"[SPEC UPDATE] Updating spec...")
+        # 4. Update spec for next iteration
+        print("[SPEC UPDATE] Updating spec...")
         current_spec = update_spec(current_spec, evaluation)
         print(f"[DEBUG UPDATED SPEC] {current_spec}")
 

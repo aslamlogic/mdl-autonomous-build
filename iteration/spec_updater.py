@@ -1,100 +1,190 @@
-def update_spec_with_failures(spec, evaluation):
-    """
-    Stage 1 — Spec Evolution Engine
+"""
+spec_updater.py
 
-    Converts failures into deterministic spec improvements.
+Deterministic Specification Evolution Engine
+
+Purpose:
+Transforms validation failures into explicit, append-only correction constraints.
+Does NOT modify original intent fields.
+Drives iterative convergence of the Meta Software Production System.
+"""
+
+from typing import Dict, List, Any
+
+
+def update_spec_from_failures(spec: Dict[str, Any], validation_report: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point for spec evolution.
+
+    Args:
+        spec: Current working specification (dict)
+        validation_report: Structured validation output from evaluator
+
+    Returns:
+        Updated specification with appended deterministic constraints
     """
 
     if not isinstance(spec, dict):
-        spec = {}
+        raise ValueError("Spec must be a dictionary")
 
-    if "constraints" not in spec:
-        spec["constraints"] = []
+    if not isinstance(validation_report, dict):
+        raise ValueError("Validation report must be a dictionary")
 
-    if "endpoints" not in spec:
-        spec["endpoints"] = []
+    findings = extract_findings(validation_report)
+    constraints = map_findings_to_constraints(findings)
 
-    logs = evaluation.get("logs", [])
-    failing_endpoints = evaluation.get("failing_endpoints", [])
+    updated_spec = append_constraints(spec, constraints)
 
-    # ============================================================
-    # 1. HARD FAILURE: NO ENDPOINTS → CREATE BASELINE
-    # ============================================================
-    if "SPEC FAIL → no endpoints defined" in logs:
-        spec["endpoints"] = [
-            {"method": "GET", "path": "/health"}
-        ]
+    return updated_spec
 
-        spec["constraints"].append({
-            "type": "bootstrap",
-            "instruction": "System must define at least one endpoint. Added /health."
-        })
 
-        return spec
+# -------------------------------------------------------------------
+# FINDING EXTRACTION
+# -------------------------------------------------------------------
 
-    # ============================================================
-    # 2. APP FAILURE → FORCE FASTAPI CONTRACT
-    # ============================================================
-    for log in logs:
-        if "app_not_callable" in log:
-            constraint = {
-                "type": "hard_requirement",
-                "rule": "fastapi_app_required",
-                "instruction": (
-                    "Application MUST define:\n"
-                    "from fastapi import FastAPI\n"
-                    "app = FastAPI()\n"
-                    "and expose `app` as callable."
-                )
-            }
-            if constraint not in spec["constraints"]:
-                spec["constraints"].append(constraint)
+def extract_findings(validation_report: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Extract atomic findings from validation report.
 
-    # ============================================================
-    # 3. ENDPOINT FAILURES → SPEC EXPANSION
-    # ============================================================
-    for failure in failing_endpoints:
+    Expected structure:
+    validation_report["findings"] = [
+        {
+            "finding_code": "...",
+            "message": "...",
+            "endpoint": {...},
+            "details": {...}
+        }
+    ]
+    """
 
-        method = failure.get("method", "GET")
-        path = failure.get("path", "/health")
-        reason = failure.get("reason")
+    findings = validation_report.get("findings", [])
 
-        # --- Missing endpoint (404) ---
-        if reason == "http_404":
-            if not any(e["path"] == path for e in spec["endpoints"]):
-                spec["endpoints"].append({
-                    "method": method,
-                    "path": path
-                })
+    if not isinstance(findings, list):
+        return []
 
-            spec["constraints"].append({
-                "type": "endpoint_requirement",
-                "instruction": f"Implement endpoint {method} {path}"
-            })
+    return findings
 
-        # --- Runtime error ---
-        if reason == "runtime_error":
-            spec["constraints"].append({
-                "type": "stability_requirement",
-                "instruction": f"Endpoint {method} {path} must execute without errors"
-            })
 
-        # --- Invalid method ---
-        if reason == "unsupported_method":
-            spec["constraints"].append({
-                "type": "method_constraint",
-                "instruction": (
-                    "Use only valid HTTP methods: GET, POST, PUT, DELETE, PATCH"
-                )
-            })
+# -------------------------------------------------------------------
+# DETERMINISTIC MAPPING ENGINE
+# -------------------------------------------------------------------
 
-    # ============================================================
-    # 4. GUARANTEE MINIMUM VIABLE SPEC
-    # ============================================================
-    if not spec["endpoints"]:
-        spec["endpoints"].append({
-            "method": "GET",
-            "path": "/health"
-        })
+def map_findings_to_constraints(findings: List[Dict[str, Any]]) -> List[str]:
+    """
+    Convert validation findings into deterministic constraints.
 
-    return spec
+    NO heuristics. Strict mapping only.
+    """
+
+    constraints = []
+
+    for finding in findings:
+        code = finding.get("finding_code", "")
+        endpoint = finding.get("endpoint", {})
+        details = finding.get("details", {})
+        message = finding.get("message", "")
+
+        constraint = None
+
+        # ------------------------------------------------------------
+        # SCHEMA MISMATCH
+        # ------------------------------------------------------------
+        if code == "schema_mismatch":
+            method = endpoint.get("method", "UNKNOWN")
+            path = endpoint.get("path", "UNKNOWN")
+            constraint = f"Ensure {method} {path} response schema matches specification exactly"
+
+        # ------------------------------------------------------------
+        # MISSING ROUTE
+        # ------------------------------------------------------------
+        elif code == "missing_route":
+            method = endpoint.get("method", "UNKNOWN")
+            path = endpoint.get("path", "UNKNOWN")
+            constraint = f"Add missing endpoint {method} {path}"
+
+        # ------------------------------------------------------------
+        # IMPORT ERROR
+        # ------------------------------------------------------------
+        elif code == "import_error":
+            module = details.get("module", "unknown_module")
+            constraint = f"Fix import error for module {module}"
+
+        # ------------------------------------------------------------
+        # RUNTIME ERROR
+        # ------------------------------------------------------------
+        elif code == "runtime_error":
+            method = endpoint.get("method", "UNKNOWN")
+            path = endpoint.get("path", "UNKNOWN")
+            constraint = f"Ensure {method} {path} executes without runtime exception"
+
+        # ------------------------------------------------------------
+        # GOVERNANCE VIOLATION
+        # ------------------------------------------------------------
+        elif code == "governance_violation":
+            constraint = "Ensure output contains code only with no commentary or markdown"
+
+        # ------------------------------------------------------------
+        # SECURITY VIOLATION
+        # ------------------------------------------------------------
+        elif code == "security_violation":
+            constraint = "Remove unsafe operations, secrets, or unrestricted system calls"
+
+        # ------------------------------------------------------------
+        # DEPENDENCY ERROR
+        # ------------------------------------------------------------
+        elif code == "dependency_error":
+            constraint = f"Fix dependency issue: {message}"
+
+        # ------------------------------------------------------------
+        # DEFAULT FALLBACK (STRICTLY CONTROLLED)
+        # ------------------------------------------------------------
+        else:
+            constraint = f"Resolve validation issue: {message}"
+
+        if constraint:
+            constraints.append(constraint)
+
+    return deduplicate_constraints(constraints)
+
+
+# -------------------------------------------------------------------
+# APPEND CONSTRAINTS (NON-DESTRUCTIVE)
+# -------------------------------------------------------------------
+
+def append_constraints(spec: Dict[str, Any], constraints: List[str]) -> Dict[str, Any]:
+    """
+    Append constraints to spec without overwriting original content.
+    """
+
+    updated_spec = dict(spec)  # shallow copy
+
+    existing_constraints = updated_spec.get("constraints", [])
+
+    if not isinstance(existing_constraints, list):
+        existing_constraints = []
+
+    combined = existing_constraints + constraints
+
+    updated_spec["constraints"] = deduplicate_constraints(combined)
+
+    return updated_spec
+
+
+# -------------------------------------------------------------------
+# UTILITY
+# -------------------------------------------------------------------
+
+def deduplicate_constraints(constraints: List[str]) -> List[str]:
+    """
+    Preserve order, remove duplicates.
+    """
+
+    seen = set()
+    result = []
+
+    for c in constraints:
+        if c not in seen:
+            seen.add(c)
+            result.append(c)
+
+    return result

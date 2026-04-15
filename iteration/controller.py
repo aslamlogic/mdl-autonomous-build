@@ -1,7 +1,7 @@
 """
 iteration/controller.py
 
-Controller WITH run registry integration
+Controller with external run_id support
 """
 
 from pathlib import Path
@@ -31,13 +31,11 @@ MAX_ITERATIONS = 3
 # MAIN LOOP
 # ============================================================
 
-def run_iteration_loop(spec: dict, project_id: str = "default"):
+def run_iteration_loop(spec: dict, project_id: str = "default", run_id: str = None):
 
-    run_id = generate_run_id()
+    if not run_id:
+        run_id = generate_run_id()
 
-    # --------------------------------------------------------
-    # REGISTER RUN
-    # --------------------------------------------------------
     create_run(run_id, project_id, MAX_ITERATIONS)
 
     run_dir = Path(f"runs/{run_id}")
@@ -54,70 +52,44 @@ def run_iteration_loop(spec: dict, project_id: str = "default"):
 
         write_json(iteration_dir / "spec_before.json", current_spec)
 
-        # ----------------------------------------------------
         # GENERATE
-        # ----------------------------------------------------
         gen = generate_code(json.dumps(current_spec, indent=2))
         write_json(iteration_dir / "generation.json", gen)
 
         if not gen.get("success"):
             mark_failed(run_id, gen.get("error_message", "generation failed"))
-            return gen
+            return
 
-        # ----------------------------------------------------
         # WRITE
-        # ----------------------------------------------------
         write = write_files(gen)
         write_json(iteration_dir / "write.json", write)
 
         if not write.get("success"):
             mark_failed(run_id, write.get("error_message", "write failed"))
-            return write
+            return
 
-        # ----------------------------------------------------
         # VALIDATE
-        # ----------------------------------------------------
         val = evaluate_app(current_spec)
         write_json(iteration_dir / "validation.json", val)
 
         if not val.get("overall_pass"):
-
             current_spec = update_spec_with_failures(current_spec, val)
             write_json(iteration_dir / "spec_after.json", current_spec)
-
             continue
 
-        # ----------------------------------------------------
         # DEPLOY
-        # ----------------------------------------------------
         dep = deploy_system(validation_report=val)
         write_json(iteration_dir / "deployment.json", dep)
 
         if not dep.get("success"):
             mark_failed(run_id, dep.get("error_message", "deployment failed"))
-            return dep
+            return
 
-        # ----------------------------------------------------
         # SUCCESS
-        # ----------------------------------------------------
         mark_completed(run_id, dep.get("live_url"))
+        return
 
-        return {
-            "success": True,
-            "run_id": run_id,
-            "live_url": dep.get("live_url")
-        }
-
-    # --------------------------------------------------------
-    # FAILED AFTER ITERATIONS
-    # --------------------------------------------------------
     mark_failed(run_id, "max iterations reached")
-
-    return {
-        "success": False,
-        "run_id": run_id,
-        "error": "max iterations reached"
-    }
 
 
 # ============================================================

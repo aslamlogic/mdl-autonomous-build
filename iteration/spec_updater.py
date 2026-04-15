@@ -3,188 +3,168 @@ spec_updater.py
 
 Deterministic Specification Evolution Engine
 
+Aligned with existing controller import:
+update_spec_with_failures()
+
 Purpose:
-Transforms validation failures into explicit, append-only correction constraints.
-Does NOT modify original intent fields.
-Drives iterative convergence of the Meta Software Production System.
+Transforms validation failures into deterministic, append-only constraints.
 """
 
 from typing import Dict, List, Any
 
 
-def update_spec_from_failures(spec: Dict[str, Any], validation_report: Dict[str, Any]) -> Dict[str, Any]:
+# ================================================================
+# PRIMARY ENTRYPOINT (MATCHES YOUR CONTROLLER)
+# ================================================================
+
+def update_spec_with_failures(spec: Dict[str, Any], validation_report: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Entry point for spec evolution.
+    Main entrypoint expected by controller.
 
     Args:
-        spec: Current working specification (dict)
-        validation_report: Structured validation output from evaluator
+        spec: current specification
+        validation_report: evaluator output
 
     Returns:
-        Updated specification with appended deterministic constraints
+        updated spec with appended constraints
     """
 
     if not isinstance(spec, dict):
-        raise ValueError("Spec must be a dictionary")
+        raise ValueError("Spec must be dict")
 
     if not isinstance(validation_report, dict):
-        raise ValueError("Validation report must be a dictionary")
+        return spec
 
     findings = extract_findings(validation_report)
     constraints = map_findings_to_constraints(findings)
 
-    updated_spec = append_constraints(spec, constraints)
-
-    return updated_spec
+    return append_constraints(spec, constraints)
 
 
-# -------------------------------------------------------------------
+# ================================================================
 # FINDING EXTRACTION
-# -------------------------------------------------------------------
+# ================================================================
 
 def extract_findings(validation_report: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Extract atomic findings from validation report.
-
-    Expected structure:
-    validation_report["findings"] = [
-        {
-            "finding_code": "...",
-            "message": "...",
-            "endpoint": {...},
-            "details": {...}
-        }
-    ]
+    Handles multiple possible report structures.
     """
 
-    findings = validation_report.get("findings", [])
+    if "findings" in validation_report:
+        return validation_report["findings"]
 
-    if not isinstance(findings, list):
-        return []
+    if "validation_findings" in validation_report:
+        return validation_report["validation_findings"]
 
-    return findings
+    return []
 
 
-# -------------------------------------------------------------------
-# DETERMINISTIC MAPPING ENGINE
-# -------------------------------------------------------------------
+# ================================================================
+# DETERMINISTIC MAPPING
+# ================================================================
 
 def map_findings_to_constraints(findings: List[Dict[str, Any]]) -> List[str]:
-    """
-    Convert validation findings into deterministic constraints.
-
-    NO heuristics. Strict mapping only.
-    """
-
     constraints = []
 
-    for finding in findings:
-        code = finding.get("finding_code", "")
-        endpoint = finding.get("endpoint", {})
-        details = finding.get("details", {})
-        message = finding.get("message", "")
+    for f in findings:
+        code = f.get("finding_code", "")
+        endpoint = f.get("endpoint", {})
+        details = f.get("details", {})
+        message = f.get("message", "")
 
         constraint = None
 
-        # ------------------------------------------------------------
-        # SCHEMA MISMATCH
-        # ------------------------------------------------------------
+        # -------------------------------
+        # SCHEMA
+        # -------------------------------
         if code == "schema_mismatch":
             method = endpoint.get("method", "UNKNOWN")
             path = endpoint.get("path", "UNKNOWN")
-            constraint = f"Ensure {method} {path} response schema matches specification exactly"
+            constraint = f"Ensure {method} {path} response matches schema"
 
-        # ------------------------------------------------------------
-        # MISSING ROUTE
-        # ------------------------------------------------------------
+        # -------------------------------
+        # ROUTES
+        # -------------------------------
         elif code == "missing_route":
             method = endpoint.get("method", "UNKNOWN")
             path = endpoint.get("path", "UNKNOWN")
-            constraint = f"Add missing endpoint {method} {path}"
+            constraint = f"Add endpoint {method} {path}"
 
-        # ------------------------------------------------------------
-        # IMPORT ERROR
-        # ------------------------------------------------------------
+        # -------------------------------
+        # IMPORTS
+        # -------------------------------
         elif code == "import_error":
-            module = details.get("module", "unknown_module")
-            constraint = f"Fix import error for module {module}"
+            module = details.get("module", "unknown")
+            constraint = f"Fix import error for {module}"
 
-        # ------------------------------------------------------------
-        # RUNTIME ERROR
-        # ------------------------------------------------------------
+        # -------------------------------
+        # RUNTIME
+        # -------------------------------
         elif code == "runtime_error":
             method = endpoint.get("method", "UNKNOWN")
             path = endpoint.get("path", "UNKNOWN")
-            constraint = f"Ensure {method} {path} executes without runtime exception"
+            constraint = f"Ensure {method} {path} runs without exception"
 
-        # ------------------------------------------------------------
-        # GOVERNANCE VIOLATION
-        # ------------------------------------------------------------
+        # -------------------------------
+        # GOVERNANCE
+        # -------------------------------
         elif code == "governance_violation":
-            constraint = "Ensure output contains code only with no commentary or markdown"
+            constraint = "Output must contain code only with no commentary"
 
-        # ------------------------------------------------------------
-        # SECURITY VIOLATION
-        # ------------------------------------------------------------
+        # -------------------------------
+        # SECURITY
+        # -------------------------------
         elif code == "security_violation":
-            constraint = "Remove unsafe operations, secrets, or unrestricted system calls"
+            constraint = "Remove unsafe operations and secrets"
 
-        # ------------------------------------------------------------
-        # DEPENDENCY ERROR
-        # ------------------------------------------------------------
+        # -------------------------------
+        # DEPENDENCY
+        # -------------------------------
         elif code == "dependency_error":
             constraint = f"Fix dependency issue: {message}"
 
-        # ------------------------------------------------------------
-        # DEFAULT FALLBACK (STRICTLY CONTROLLED)
-        # ------------------------------------------------------------
+        # -------------------------------
+        # FALLBACK
+        # -------------------------------
         else:
-            constraint = f"Resolve validation issue: {message}"
+            if message:
+                constraint = f"Resolve issue: {message}"
 
         if constraint:
             constraints.append(constraint)
 
-    return deduplicate_constraints(constraints)
+    return dedupe(constraints)
 
 
-# -------------------------------------------------------------------
+# ================================================================
 # APPEND CONSTRAINTS (NON-DESTRUCTIVE)
-# -------------------------------------------------------------------
+# ================================================================
 
 def append_constraints(spec: Dict[str, Any], constraints: List[str]) -> Dict[str, Any]:
-    """
-    Append constraints to spec without overwriting original content.
-    """
+    updated = dict(spec)
 
-    updated_spec = dict(spec)  # shallow copy
+    existing = updated.get("constraints", [])
 
-    existing_constraints = updated_spec.get("constraints", [])
+    if not isinstance(existing, list):
+        existing = []
 
-    if not isinstance(existing_constraints, list):
-        existing_constraints = []
+    combined = existing + constraints
+    updated["constraints"] = dedupe(combined)
 
-    combined = existing_constraints + constraints
-
-    updated_spec["constraints"] = deduplicate_constraints(combined)
-
-    return updated_spec
+    return updated
 
 
-# -------------------------------------------------------------------
+# ================================================================
 # UTILITY
-# -------------------------------------------------------------------
+# ================================================================
 
-def deduplicate_constraints(constraints: List[str]) -> List[str]:
-    """
-    Preserve order, remove duplicates.
-    """
-
+def dedupe(items: List[str]) -> List[str]:
     seen = set()
     result = []
 
-    for c in constraints:
-        if c not in seen:
-            seen.add(c)
-            result.append(c)
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
 
     return result

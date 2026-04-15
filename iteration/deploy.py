@@ -1,35 +1,39 @@
 """
 iteration/deploy.py
 
-Render deployment loop for the Meta Dev Launcher.
+Project-aware Render deployment loop for the Meta Software Production System.
 
 Purpose
 -------
-1. Trigger or verify deployment against Render after a successful validation cycle.
-2. Poll deployment/live status deterministically.
-3. Probe the live /health endpoint.
-4. Return structured machine-readable deployment results for controller integration.
+1. Route deployment per project rather than through a shared global config.
+2. Read deployment configuration from the project registry.
+3. Support:
+   - project-specific deploy hook
+   - project-specific Render service ID
+   - project-specific health path
+   - project-specific API key override
+4. Return deterministic structured deployment results.
 
-Environment variables
----------------------
-Required for full Render API control:
-- RENDER_API_KEY
-- RENDER_SERVICE_ID
+Project deploy_config shape
+---------------------------
+{
+  "service_id": "srv-xxxx",
+  "health_path": "/health",
+  "deploy_hook_url": "https://api.render.com/deploy/....",
+  "api_key_env": "RENDER_API_KEY_EVIDENTIA",
+  "base_url": "https://api.render.com/v1"
+}
 
-Optional:
-- RENDER_BASE_URL               default: https://api.render.com/v1
-- RENDER_DEPLOY_HOOK_URL        if present, deploy hook trigger is preferred
-- RENDER_HEALTH_PATH            default: /health
-- RENDER_POLL_INTERVAL_SECONDS  default: 5
-- RENDER_POLL_TIMEOUT_SECONDS   default: 300
-
-Notes
------
-- This module is safe if Render credentials are missing: it returns a structured failure.
-- It supports two deployment trigger modes:
-  1. Deploy hook URL
-  2. Render API service deploy endpoint
-- It also supports a passive verification mode if the service is already live.
+Fallback behaviour
+------------------
+If a value is not present in deploy_config, the module falls back to:
+- env vars:
+    RENDER_API_KEY
+    RENDER_SERVICE_ID
+    RENDER_DEPLOY_HOOK_URL
+    RENDER_BASE_URL
+    RENDER_HEALTH_PATH
+- then deterministic failure if still missing.
 """
 
 from __future__ import annotations
@@ -41,69 +45,65 @@ from typing import Any, Dict, Optional
 
 import requests
 
+from projects.registry import get_project
 
-DEFAULT_RENDER_BASE_URL = os.getenv("RENDER_BASE_URL", "https://api.render.com/v1")
-DEFAULT_HEALTH_PATH = os.getenv("RENDER_HEALTH_PATH", "/health")
-DEFAULT_POLL_INTERVAL_SECONDS = int(os.getenv("RENDER_POLL_INTERVAL_SECONDS", "5"))
-DEFAULT_POLL_TIMEOUT_SECONDS = int(os.getenv("RENDER_POLL_TIMEOUT_SECONDS", "300"))
+
+DEFAULT_RENDER_BASE_URL = "https://api.render.com/v1"
+DEFAULT_HEALTH_PATH = "/health"
+DEFAULT_POLL_INTERVAL_SECONDS = 5
+DEFAULT_POLL_TIMEOUT_SECONDS = 300
 
 
 # ============================================================
 # PUBLIC API
 # ============================================================
 
-def deploy_system(base_dir: str = ".", validation_report: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def deploy_system(
+    project_id: Optional[str] = None,
+    base_dir: str = ".",
+    validation_report: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
-    Backward-compatible entrypoint.
+    Project-aware deployment entrypoint.
 
     Parameters
     ----------
+    project_id:
+        Registry project identifier. Required for per-project deployment hardening.
     base_dir:
-        Included for interface compatibility. Not used directly here.
+        Kept for compatibility. Not used directly here.
     validation_report:
-        Optional validation report. If provided and failed, deployment is blocked.
+        If provided and failed, deployment is blocked.
 
     Returns
     -------
-    Structured deployment result dict.
+    Structured deployment result.
     """
     if isinstance(validation_report, dict):
         if not validation_report.get("overall_pass", False):
             return _failure(
                 error_type="deployment_blocked",
                 error_message="Deployment blocked because validation did not pass",
-                diagnostics={"stage": "preflight_validation_gate"},
+                diagnostics={"stage": "preflight_validation_gate", "project_id": project_id},
             )
 
-    return trigger_deploy_and_verify()
+    config_result = _resolve_project_deploy_config(project_id)
+    if not config_result["success"]:
+        return config_result
 
+    deploy_config = config_result["deploy_config"]
 
-def trigger_deploy_and_verify() -> Dict[str, Any]:
-    """
-    Full deployment loop.
-
-    Flow
-    ----
-    1. Preflight credential check.
-    2. Trigger deployment.
-    3. Poll service state/live URL.
-    4. Probe live /health.
-    """
-    preflight = _preflight()
-    if not preflight["success"]:
-        return preflight
-
-    trigger_result = _trigger_deployment()
+    trigger_result = _trigger_deployment(deploy_config)
     if not trigger_result["success"]:
         return trigger_result
 
-    service_result = _poll_for_live_service()
+    service_result = _poll_for_live_service(deploy_config)
     if not service_result["success"]:
         return service_result
 
     live_url = service_result["live_url"]
 
-    probe_result = probe_live_url(live_url)
+    probe_result = probe_live_url(live_url=live_url, health_path=deploy_config["health_path"])
     if not probe_result["success"]:
         return {
             "success": False,
@@ -113,6 +113,8 @@ def trigger_deploy_and_verify() -> Dict[str, Any]:
             "error_message": probe_result["error_message"],
             "diagnostics": {
                 "stage": "live_probe",
+                "project_id": project_id,
+                "deploy_config": _safe_deploy_config_for_log(deploy_config),
                 "service_result": service_result,
                 "probe_result": probe_result,
             },
@@ -126,14 +128,16 @@ def trigger_deploy_and_verify() -> Dict[str, Any]:
         "error_message": None,
         "diagnostics": {
             "stage": "complete",
-            "trigger": trigger_result,
+            "project_id": project_id,
+            "deploy_config": _safe_deploy_config_for_log(deploy_config),
+            "trigger_result": trigger_result,
             "service_result": service_result,
             "probe_result": probe_result,
         },
     }
 
 
-def probe_live_url(live_url: str) -> Dict[str, Any]:
+def probe_live_url(live_url: str, health_path: str = DEFAULT_HEALTH_PATH) -> Dict[str, Any]:
     """
     Probe the live service health endpoint deterministically.
     """
@@ -144,7 +148,11 @@ def probe_live_url(live_url: str) -> Dict[str, Any]:
             diagnostics={"stage": "probe_live_url"},
         )
 
-    target = live_url.rstrip("/") + DEFAULT_HEALTH_PATH
+    path = health_path if isinstance(health_path, str) and health_path.strip() else DEFAULT_HEALTH_PATH
+    if not path.startswith("/"):
+        path = "/" + path
+
+    target = live_url.rstrip("/") + path
 
     try:
         response = requests.get(target, timeout=20)
@@ -208,43 +216,125 @@ def probe_live_url(live_url: str) -> Dict[str, Any]:
 
 
 # ============================================================
-# PREFLIGHT
+# PROJECT CONFIG RESOLUTION
 # ============================================================
 
-def _preflight() -> Dict[str, Any]:
-    api_key = os.getenv("RENDER_API_KEY", "").strip()
-    service_id = os.getenv("RENDER_SERVICE_ID", "").strip()
-    deploy_hook = os.getenv("RENDER_DEPLOY_HOOK_URL", "").strip()
-
-    if deploy_hook:
-        return {
-            "success": True,
-            "mode": "deploy_hook",
-            "error_type": None,
-            "error_message": None,
-            "diagnostics": {"stage": "preflight", "mode": "deploy_hook"},
-        }
-
-    if not api_key:
+def _resolve_project_deploy_config(project_id: Optional[str]) -> Dict[str, Any]:
+    if not project_id:
         return _failure(
-            error_type="render_unconfigured",
-            error_message="RENDER_API_KEY is not set",
-            diagnostics={"stage": "preflight", "missing": "RENDER_API_KEY"},
+            error_type="project_deploy_unconfigured",
+            error_message="project_id is required for project-aware deployment",
+            diagnostics={"stage": "resolve_project_deploy_config"},
         )
 
-    if not service_id:
+    project = get_project(project_id)
+    if not project:
+        return _failure(
+            error_type="project_not_found",
+            error_message=f"Project not found: {project_id}",
+            diagnostics={"stage": "resolve_project_deploy_config", "project_id": project_id},
+        )
+
+    deploy_config = project.get("deploy_config", {})
+    if not isinstance(deploy_config, dict):
+        return _failure(
+            error_type="project_deploy_unconfigured",
+            error_message=f"Project deploy_config is invalid for project: {project_id}",
+            diagnostics={"stage": "resolve_project_deploy_config", "project_id": project_id},
+        )
+
+    api_key_env = deploy_config.get("api_key_env", "RENDER_API_KEY")
+    if not isinstance(api_key_env, str) or not api_key_env.strip():
+        api_key_env = "RENDER_API_KEY"
+
+    resolved = {
+        "project_id": project_id,
+        "project_name": project.get("project_name", project_id),
+        "deploy_provider": project.get("deploy_provider", "render"),
+        "api_key": os.getenv(api_key_env, "").strip(),
+        "api_key_env": api_key_env,
+        "service_id": _first_non_empty_string(
+            deploy_config.get("service_id"),
+            os.getenv("RENDER_SERVICE_ID", "").strip(),
+        ),
+        "deploy_hook_url": _first_non_empty_string(
+            deploy_config.get("deploy_hook_url"),
+            os.getenv("RENDER_DEPLOY_HOOK_URL", "").strip(),
+        ),
+        "base_url": _first_non_empty_string(
+            deploy_config.get("base_url"),
+            os.getenv("RENDER_BASE_URL", "").strip(),
+            DEFAULT_RENDER_BASE_URL,
+        ),
+        "health_path": _first_non_empty_string(
+            deploy_config.get("health_path"),
+            os.getenv("RENDER_HEALTH_PATH", "").strip(),
+            DEFAULT_HEALTH_PATH,
+        ),
+        "poll_interval_seconds": _coerce_int(
+            deploy_config.get("poll_interval_seconds"),
+            _coerce_int(os.getenv("RENDER_POLL_INTERVAL_SECONDS"), DEFAULT_POLL_INTERVAL_SECONDS),
+        ),
+        "poll_timeout_seconds": _coerce_int(
+            deploy_config.get("poll_timeout_seconds"),
+            _coerce_int(os.getenv("RENDER_POLL_TIMEOUT_SECONDS"), DEFAULT_POLL_TIMEOUT_SECONDS),
+        ),
+    }
+
+    provider = str(resolved["deploy_provider"]).lower().strip()
+    if provider != "render":
+        return _failure(
+            error_type="unsupported_deploy_provider",
+            error_message=f"Unsupported deploy provider for project {project_id}: {provider}",
+            diagnostics={"stage": "resolve_project_deploy_config", "project_id": project_id},
+        )
+
+    if resolved["deploy_hook_url"]:
+        return {
+            "success": True,
+            "deploy_config": resolved,
+            "error_type": None,
+            "error_message": None,
+            "diagnostics": {
+                "stage": "resolve_project_deploy_config",
+                "project_id": project_id,
+                "mode": "deploy_hook",
+                "deploy_config": _safe_deploy_config_for_log(resolved),
+            },
+        }
+
+    if not resolved["api_key"]:
         return _failure(
             error_type="render_unconfigured",
-            error_message="RENDER_SERVICE_ID is not set",
-            diagnostics={"stage": "preflight", "missing": "RENDER_SERVICE_ID"},
+            error_message=f"Render API key is not configured for project {project_id} via env var {api_key_env}",
+            diagnostics={
+                "stage": "resolve_project_deploy_config",
+                "project_id": project_id,
+                "api_key_env": api_key_env,
+            },
+        )
+
+    if not resolved["service_id"]:
+        return _failure(
+            error_type="render_unconfigured",
+            error_message=f"Render service_id is not configured for project {project_id}",
+            diagnostics={
+                "stage": "resolve_project_deploy_config",
+                "project_id": project_id,
+            },
         )
 
     return {
         "success": True,
-        "mode": "render_api",
+        "deploy_config": resolved,
         "error_type": None,
         "error_message": None,
-        "diagnostics": {"stage": "preflight", "mode": "render_api"},
+        "diagnostics": {
+            "stage": "resolve_project_deploy_config",
+            "project_id": project_id,
+            "mode": "render_api",
+            "deploy_config": _safe_deploy_config_for_log(resolved),
+        },
     }
 
 
@@ -252,24 +342,26 @@ def _preflight() -> Dict[str, Any]:
 # TRIGGER
 # ============================================================
 
-def _trigger_deployment() -> Dict[str, Any]:
-    deploy_hook = os.getenv("RENDER_DEPLOY_HOOK_URL", "").strip()
+def _trigger_deployment(deploy_config: Dict[str, Any]) -> Dict[str, Any]:
+    deploy_hook_url = deploy_config.get("deploy_hook_url", "")
+    if isinstance(deploy_hook_url, str) and deploy_hook_url.strip():
+        return _trigger_via_deploy_hook(deploy_config)
 
-    if deploy_hook:
-        return _trigger_via_deploy_hook(deploy_hook)
-
-    return _trigger_via_render_api()
+    return _trigger_via_render_api(deploy_config)
 
 
-def _trigger_via_deploy_hook(deploy_hook: str) -> Dict[str, Any]:
+def _trigger_via_deploy_hook(deploy_config: Dict[str, Any]) -> Dict[str, Any]:
+    deploy_hook_url = deploy_config["deploy_hook_url"]
+
     try:
-        response = requests.post(deploy_hook, timeout=30)
+        response = requests.post(deploy_hook_url, timeout=30)
     except Exception as exc:
         return _failure(
             error_type="render_trigger_error",
             error_message=str(exc),
             diagnostics={
                 "stage": "trigger_deploy_hook",
+                "project_id": deploy_config.get("project_id"),
                 "exception_class": exc.__class__.__name__,
             },
         )
@@ -280,6 +372,7 @@ def _trigger_via_deploy_hook(deploy_hook: str) -> Dict[str, Any]:
             error_message=f"Deploy hook returned HTTP {response.status_code}",
             diagnostics={
                 "stage": "trigger_deploy_hook",
+                "project_id": deploy_config.get("project_id"),
                 "status_code": response.status_code,
                 "response_text": response.text[:1000],
             },
@@ -292,17 +385,19 @@ def _trigger_via_deploy_hook(deploy_hook: str) -> Dict[str, Any]:
         "error_message": None,
         "diagnostics": {
             "stage": "trigger_deploy_hook",
+            "project_id": deploy_config.get("project_id"),
             "status_code": response.status_code,
             "response_text": response.text[:1000],
         },
     }
 
 
-def _trigger_via_render_api() -> Dict[str, Any]:
-    api_key = os.getenv("RENDER_API_KEY", "").strip()
-    service_id = os.getenv("RENDER_SERVICE_ID", "").strip()
+def _trigger_via_render_api(deploy_config: Dict[str, Any]) -> Dict[str, Any]:
+    api_key = deploy_config["api_key"]
+    service_id = deploy_config["service_id"]
+    base_url = deploy_config["base_url"]
 
-    url = f"{DEFAULT_RENDER_BASE_URL}/services/{service_id}/deploys"
+    url = f"{base_url}/services/{service_id}/deploys"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
@@ -317,6 +412,7 @@ def _trigger_via_render_api() -> Dict[str, Any]:
             error_message=str(exc),
             diagnostics={
                 "stage": "trigger_render_api",
+                "project_id": deploy_config.get("project_id"),
                 "url": url,
                 "exception_class": exc.__class__.__name__,
             },
@@ -328,6 +424,7 @@ def _trigger_via_render_api() -> Dict[str, Any]:
             error_message=f"Render deploy API returned HTTP {response.status_code}",
             diagnostics={
                 "stage": "trigger_render_api",
+                "project_id": deploy_config.get("project_id"),
                 "url": url,
                 "status_code": response.status_code,
                 "response_text": response.text[:1000],
@@ -343,6 +440,7 @@ def _trigger_via_render_api() -> Dict[str, Any]:
         "error_message": None,
         "diagnostics": {
             "stage": "trigger_render_api",
+            "project_id": deploy_config.get("project_id"),
             "status_code": response.status_code,
             "payload": payload,
         },
@@ -353,25 +451,34 @@ def _trigger_via_render_api() -> Dict[str, Any]:
 # POLLING
 # ============================================================
 
-def _poll_for_live_service() -> Dict[str, Any]:
-    api_key = os.getenv("RENDER_API_KEY", "").strip()
-    service_id = os.getenv("RENDER_SERVICE_ID", "").strip()
-    deploy_hook = os.getenv("RENDER_DEPLOY_HOOK_URL", "").strip()
+def _poll_for_live_service(deploy_config: Dict[str, Any]) -> Dict[str, Any]:
+    api_key = deploy_config.get("api_key", "")
+    service_id = deploy_config.get("service_id", "")
+    base_url = deploy_config.get("base_url", DEFAULT_RENDER_BASE_URL)
+    deploy_hook_url = deploy_config.get("deploy_hook_url", "")
+    poll_interval_seconds = deploy_config.get("poll_interval_seconds", DEFAULT_POLL_INTERVAL_SECONDS)
+    poll_timeout_seconds = deploy_config.get("poll_timeout_seconds", DEFAULT_POLL_TIMEOUT_SECONDS)
 
-    if deploy_hook and (not api_key or not service_id):
+    if deploy_hook_url and (not api_key or not service_id):
         return _failure(
             error_type="render_poll_unconfigured",
-            error_message="Polling requires RENDER_API_KEY and RENDER_SERVICE_ID even when using a deploy hook",
-            diagnostics={"stage": "poll_preflight"},
+            error_message=(
+                f"Polling requires api key and service_id for project {deploy_config.get('project_id')}, "
+                "even when using a deploy hook"
+            ),
+            diagnostics={
+                "stage": "poll_preflight",
+                "project_id": deploy_config.get("project_id"),
+            },
         )
 
-    url = f"{DEFAULT_RENDER_BASE_URL}/services/{service_id}"
+    url = f"{base_url}/services/{service_id}"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
 
-    deadline = time.time() + DEFAULT_POLL_TIMEOUT_SECONDS
+    deadline = time.time() + poll_timeout_seconds
     last_payload: Optional[Dict[str, Any]] = None
 
     while time.time() < deadline:
@@ -383,6 +490,7 @@ def _poll_for_live_service() -> Dict[str, Any]:
                 error_message=str(exc),
                 diagnostics={
                     "stage": "poll_service",
+                    "project_id": deploy_config.get("project_id"),
                     "url": url,
                     "exception_class": exc.__class__.__name__,
                 },
@@ -394,6 +502,7 @@ def _poll_for_live_service() -> Dict[str, Any]:
                 error_message=f"Render service status API returned HTTP {response.status_code}",
                 diagnostics={
                     "stage": "poll_service",
+                    "project_id": deploy_config.get("project_id"),
                     "url": url,
                     "status_code": response.status_code,
                     "response_text": response.text[:1000],
@@ -415,19 +524,21 @@ def _poll_for_live_service() -> Dict[str, Any]:
                 "error_message": None,
                 "diagnostics": {
                     "stage": "poll_service",
+                    "project_id": deploy_config.get("project_id"),
                     "payload": payload,
                 },
             }
 
-        time.sleep(DEFAULT_POLL_INTERVAL_SECONDS)
+        time.sleep(poll_interval_seconds)
 
     return _failure(
         error_type="render_poll_timeout",
         error_message="Timed out waiting for live Render service URL",
         diagnostics={
             "stage": "poll_service",
+            "project_id": deploy_config.get("project_id"),
             "last_payload": last_payload,
-            "timeout_seconds": DEFAULT_POLL_TIMEOUT_SECONDS,
+            "timeout_seconds": poll_timeout_seconds,
         },
     )
 
@@ -485,6 +596,35 @@ def _safe_json_response(response: requests.Response) -> Any:
             return {"raw_text": "<unreadable response>"}
 
 
+def _safe_deploy_config_for_log(deploy_config: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "project_id": deploy_config.get("project_id"),
+        "project_name": deploy_config.get("project_name"),
+        "deploy_provider": deploy_config.get("deploy_provider"),
+        "api_key_env": deploy_config.get("api_key_env"),
+        "service_id": deploy_config.get("service_id"),
+        "deploy_hook_url_present": bool(deploy_config.get("deploy_hook_url")),
+        "base_url": deploy_config.get("base_url"),
+        "health_path": deploy_config.get("health_path"),
+        "poll_interval_seconds": deploy_config.get("poll_interval_seconds"),
+        "poll_timeout_seconds": deploy_config.get("poll_timeout_seconds"),
+    }
+
+
+def _first_non_empty_string(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
 def _failure(error_type: str, error_message: str, diagnostics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {
         "success": False,
@@ -501,5 +641,5 @@ def _failure(error_type: str, error_message: str, diagnostics: Optional[Dict[str
 # ============================================================
 
 if __name__ == "__main__":
-    result = trigger_deploy_and_verify()
+    result = deploy_system(project_id="default", validation_report={"overall_pass": True})
     print(json.dumps(result, indent=2))

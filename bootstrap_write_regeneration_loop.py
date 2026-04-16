@@ -1,3 +1,16 @@
+import os
+import textwrap
+
+BASE = os.getcwd()
+
+def write_file(path: str, content: str) -> None:
+    full_path = os.path.join(BASE, path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path, "w", encoding="utf-8") as f:
+        f.write(textwrap.dedent(content).lstrip("\n"))
+    print(f"CREATED: {path}")
+
+write_file("iteration/controller.py", r'''
 from __future__ import annotations
 
 import json
@@ -182,3 +195,23 @@ class IterationController:
         }
         self.logger.log(run_id, "iteration_exhausted", "FAIL", fallback_payload)
         return fallback_payload
+''')
+
+write_file("iteration/worker.py", r'''
+from __future__ import annotations
+
+from typing import Dict, Any
+
+from iteration.controller import IterationController
+
+
+def execute_run(workspace_path: str, initial_spec_text: str, run_id: str = "default_run") -> Dict[str, Any]:
+    controller = IterationController()
+    return controller.run(
+        workspace_path=workspace_path,
+        initial_spec_text=initial_spec_text,
+        run_id=run_id
+    )
+''')
+
+print("REGENERATION LOOP INTEGRATION WRITTEN")

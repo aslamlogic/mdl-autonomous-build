@@ -1,0 +1,176 @@
+{
+  "run_id": "default_run",
+  "timestamp": "2026-04-16T20:50:44.320654Z",
+  "passed": false,
+  "finding_count": 28,
+  "findings": [
+    {
+      "category": "DEPENDENCY",
+      "message": "Python dependency not importable: uvicorn[standard]==0.27.1",
+      "path": "./requirements.txt",
+      "failure_code": "E-DEPENDENCY"
+    },
+    {
+      "category": "BEHAVIOUR",
+      "message": "Runtime validation failed: cannot import name 'evaluate_app' from 'iteration.evaluator' (/workspaces/meta-dev-launcher/iteration/evaluator.py)",
+      "path": "meta_ui/api.py",
+      "failure_code": "E-BEHAVIOUR"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "meta_apply_full_system.py",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "README.md",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "engine/llm_interface.py",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "iteration/governance_validator.py",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "iteration/generator.py",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "GOVERNANCE",
+      "message": "Prohibited governance pattern found: ```",
+      "path": "meta_system/README.md",
+      "failure_code": "E-GOVERNANCE"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\bsubprocess\\b",
+      "path": "meta_apply_full_system.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\bsubprocess\\b",
+      "path": "engine/bootstrap.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\brequests\\.",
+      "path": "engine/bootstrap.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\bsubprocess\\b",
+      "path": "engine/build.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\brequests\\.",
+      "path": "iteration/deploy.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\bsubprocess\\b",
+      "path": "iteration/git_commit.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\bsubprocess\\b",
+      "path": "iteration/github_service.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "SECURITY",
+      "message": "Security blocklist pattern found: \\brequests\\.",
+      "path": "iteration/github_service.py",
+      "failure_code": "E-SECURITY"
+    },
+    {
+      "category": "LWP",
+      "message": "rule_applicator.py missing; deterministic LWP chain cannot be confirmed",
+      "path": "iteration/rule_applicator.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: entitled",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: liable",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: will win",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: prediction",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: guaranteed outcome",
+      "path": "bootstrap_write_p6_full.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: entitled",
+      "path": "iteration/lwp_validator.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: liable",
+      "path": "iteration/lwp_validator.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: will win",
+      "path": "iteration/lwp_validator.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: prediction",
+      "path": "iteration/lwp_validator.py",
+      "failure_code": "E-LWP"
+    },
+    {
+      "category": "LWP",
+      "message": "Prohibited advisory/legal-outcome language found: guaranteed outcome",
+      "path": "iteration/lwp_validator.py",
+      "failure_code": "E-LWP"
+    }
+  ]
+}

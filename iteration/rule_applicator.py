@@ -1,2 +1,1 @@
-def apply_rules(data):
-    return data
+# Rule applicator logic can be implemented here

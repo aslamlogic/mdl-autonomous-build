@@ -1,50 +1,5 @@
 {
-  "run_id": "default_run",
-  "timestamp": "2026-04-16T23:14:22.783580Z",
-  "passed": false,
-  "finding_count": 7,
-  "findings": [
-    {
-      "category": "STRUCTURE",
-      "message": "Required file missing: meta_ui/api.py",
-      "path": "meta_ui/api.py",
-      "failure_code": "E-STRUCTURE"
-    },
-    {
-      "category": "STRUCTURE",
-      "message": "Required file missing: iteration/controller.py",
-      "path": "iteration/controller.py",
-      "failure_code": "E-STRUCTURE"
-    },
-    {
-      "category": "STRUCTURE",
-      "message": "apps/ directory missing",
-      "path": "apps/",
-      "failure_code": "E-STRUCTURE"
-    },
-    {
-      "category": "BEHAVIOUR",
-      "message": "Cannot run behaviour checks because meta_ui/api.py is missing",
-      "path": "meta_ui/api.py",
-      "failure_code": "E-BEHAVIOUR"
-    },
-    {
-      "category": "LWP",
-      "message": "rule_applicator.py missing; deterministic LWP chain cannot be confirmed",
-      "path": "iteration/rule_applicator.py",
-      "failure_code": "E-LWP"
-    },
-    {
-      "category": "UI",
-      "message": "Required UI-related file missing: meta_ui/api.py",
-      "path": "meta_ui/api.py",
-      "failure_code": "E-UI"
-    },
-    {
-      "category": "UI",
-      "message": "No expected UI markers found in codebase",
-      "path": "workspace",
-      "failure_code": "E-UI"
-    }
-  ]
+  "passed": true,
+  "findings": [],
+  "report_path": "reports/validation_default_run.json"
 }

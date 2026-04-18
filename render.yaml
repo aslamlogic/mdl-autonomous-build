@@ -1,18 +1,14 @@
 services:
   - type: web
-    name: meta-dev-launcher-web
+    name: mdl-autonomous-build
     env: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn meta_ui.api:app --host 0.0.0.0 --port $PORT"
+    plan: starter
+    buildCommand: |
+      echo "fastapi==0.110.0" > requirements.txt
+      echo "pydantic==1.10.13" >> requirements.txt
+      echo "uvicorn==0.27.1" >> requirements.txt
+      pip install -r requirements.txt
+    startCommand: uvicorn meta_ui.api:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: ENVIRONMENT
-        value: production
-      - key: LOG_LEVEL
-        value: INFO
-      - key: PYTHONUNBUFFERED
-        value: "1"

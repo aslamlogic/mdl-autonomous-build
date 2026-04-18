@@ -21,9 +21,9 @@ def health():
 
 
 @app.post("/run")
-def run(req: RunRequest):
+def run(request: RunRequest):req: RunRequest):
     try:
-        result = run_iteration_loop(
+        result = run_iteration_loop(objective=request.objective)
             objective=req.objective,
             constraints=req.constraints,
             targets=req.targets,

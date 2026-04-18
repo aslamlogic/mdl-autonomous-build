@@ -33,7 +33,6 @@ class IterationController:
                 template = r.get("template", "")
                 if path and template:
                     self._write_single(workspace_path, path, template)
-                    print(f"TEMPLATE CREATED: {path}")
 
     def _collect_main(self, workspace_path):
         for p in ["generated_app/main.py", "apps/generated_app/main.py"]:
@@ -54,8 +53,6 @@ class IterationController:
         repairs = []
 
         for i in range(self.max_iterations):
-            print(f"ITERATION {i}")
-
             self._apply_templates(workspace_path, repairs)
 
             files = generate(initial_spec_text, repairs, self._allowed_files())
@@ -64,20 +61,16 @@ class IterationController:
 
             result = evaluate(self._collect_main(workspace_path))
             score = self._score(result)
-            print(f"Score: {score}")
 
             if result.get("passed"):
-                print("VALIDATED_BUILD")
                 return {"status": "SUCCESS", "score": score}
 
             sig = self._sig(result)
 
             if prev_score is not None and score <= prev_score:
-                print("NO IMPROVEMENT -> STOP")
                 return {"status": "FAIL", "reason": "no_improvement"}
 
             if sig == prev_sig:
-                print("IDENTICAL FAILURE SIGNATURE -> STOP")
                 return {"status": "FAIL", "reason": "stuck"}
 
             repairs = self.spec_updater.derive_constraints(result.get("findings", []))
@@ -85,3 +78,8 @@ class IterationController:
             prev_sig = sig
 
         return {"status": "FAIL", "reason": "max_iterations"}
+
+
+def run_iteration_loop(*args, **kwargs):
+    controller = IterationController()
+    return controller.run(*args, **kwargs)

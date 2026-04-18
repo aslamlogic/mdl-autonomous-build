@@ -1,0 +1,23 @@
+name: Meta Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python phase2_p6_runner.py
+
+  deploy:
+    needs: build-and-validate
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "READY FOR RENDER"

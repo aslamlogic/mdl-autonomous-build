@@ -47,7 +47,13 @@ class IterationController:
     def _sig(self, result):
         return set(f"{f.get('failure_code')}|{f.get('path')}" for f in result.get("findings", []))
 
-    def run(self, workspace_path, initial_spec_text, run_id="run"):
+    def run(self, workspace_path=None, initial_spec_text=None, run_id="run", **kwargs):
+        # fallback mapping from API payload
+        if workspace_path is None:
+            workspace_path = kwargs.get("workspace_path", ".")
+        if initial_spec_text is None:
+            initial_spec_text = kwargs.get("objective", "")
+
         prev_score = None
         prev_sig = set()
         repairs = []

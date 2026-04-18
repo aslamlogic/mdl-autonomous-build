@@ -27,12 +27,12 @@ def generate(
     client = _get_client()
 
     # SAFE minimal call (no complex schema assumptions)
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         input="Return JSON: {\"files\": []}"
     )
 
-    text = response.output[0].content[0].text
+    text = response.choices[0].message.content
 
     try:
         payload = json.loads(text)

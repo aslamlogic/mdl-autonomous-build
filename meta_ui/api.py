@@ -1,18 +1,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import traceback
+from typing import Optional
 
-from iteration.controller import run_iteration_loop
+from iteration.controller import IterationController
+
 
 app = FastAPI()
 
 
 class RunRequest(BaseModel):
-    objective: str
-    constraints: list[str]
-    targets: list[str]
-    iteration_mode: str
-    termination_condition: str
+    instruction: Optional[str] = None
 
 
 @app.get("/health")
@@ -20,20 +17,18 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/")
+def root():
+    return {"message": "MDL Autonomous Build API"}
+
+
 @app.post("/run")
-def run(request: RunRequest):req: RunRequest):
-    try:
-        result = run_iteration_loop(objective=request.objective)
-            objective=req.objective,
-            constraints=req.constraints,
-            targets=req.targets,
-            iteration_mode=req.iteration_mode,
-            termination_condition=req.termination_condition
-        )
-        return {"status": "completed", "result": result}
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-            "trace": traceback.format_exc()
-        }
+def run_build(request: RunRequest):
+    """Canonical /run endpoint aligned to P1–P12 pipeline."""
+    controller = IterationController()
+    result = controller.run(
+        workspace_path=".",
+        initial_spec_text=request.instruction or "Build a minimal FastAPI health endpoint",
+        run_id="run_001"
+    )
+    return result

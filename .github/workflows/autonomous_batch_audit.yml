@@ -1,0 +1,33 @@
+name: Autonomous-Batch-Audit
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Triggered by the machine every night at midnight 
+  push:
+    paths:
+      - 'logs/**'      # Triggered when new logs are pushed
+
+jobs:
+  batch-archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Ingestion Logic
+        run: |
+          python ingest_logs.py
+          python scripts/provenance.py
+
+      - name: Machine-Commit to Audit Branch
+        run: |
+          git config user.name "MDL-Factory-Bot"
+          git config user.email "factory-bot@abacus.ai"
+          # Create or switch to a dedicated audit branch
+          git checkout -b audit-log || git checkout audit-log
+          git add errors_solutions.db exports/
+          git commit -m "autonomous: update audit records [$(date -u +%Y-%m-%d)]" || echo "No changes to audit."
+          git push origin audit-log

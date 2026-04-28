@@ -9,7 +9,7 @@ class IterationController:
         return self.allowed_files
 
     def run(self, spec_text: str):
-        print(f"[{datetime.now()}] Starting build with spec length: {len(spec_text)}")
+        print(f"[{datetime.now()}] Starting build with spec length: {len(spec_text) if spec_text else 0}")
         try:
             result = generate(spec_text, None, self._allowed_files())
         except Exception as e:
@@ -17,5 +17,4 @@ class IterationController:
         print(f"[{datetime.now()}] Build completed with status: {result.get('status', 'unknown')}")
         return result
 
-# single exported controller instance used by meta_ui/api.py
 controller = IterationController()

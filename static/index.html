@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MDL Autonomous Factory</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#0b1020;color:#e8eefc}
+    header{padding:18px 22px;border-bottom:1px solid #1b2550;background:#0f1733;display:flex;justify-content:space-between;align-items:center}
+    .brand{font-weight:800;letter-spacing:.4px}
+    .pill{font-size:12px;border:1px solid #26356f;border-radius:999px;padding:4px 10px;color:#a9b6e8}
+    main{max-width:1200px;margin:0 auto;padding:22px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+    @media(max-width:900px){main{grid-template-columns:1fr}}
+    .card{background:#0f1733;border:1px solid #1b2550;border-radius:14px;padding:16px}
+    label{display:block;font-size:12px;color:#a9b6e8;margin-bottom:8px;letter-spacing:.9px;text-transform:uppercase}
+    textarea{width:100%;min-height:180px;border-radius:10px;border:1px solid #26356f;background:#0b1020;color:#e8eefc;padding:12px;font-size:14px;outline:none}
+    textarea:focus{border-color:#4f8ef7}
+    button{margin-top:12px;width:100%;border:0;border-radius:10px;padding:12px 14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#4f8ef7,#7c3aed);color:white}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    pre{white-space:pre-wrap;word-break:break-word;margin:0;padding:12px;border-radius:10px;border:1px solid #26356f;background:#0b1020;color:#b7f7c2;min-height:220px;max-height:520px;overflow:auto}
+    .muted{color:#a9b6e8;font-size:12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    a{color:#9cc1ff;text-decoration:none}
+    a:hover{text-decoration:underline}
+    .tag{font-size:12px;border:1px solid #26356f;border-radius:10px;padding:6px 10px;color:#a9b6e8}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">MDL Autonomous Factory</div>
+    <div class="row">
+      <span class="pill">Spec v2.1</span>
+      <span class="pill">SMR v5.6</span>
+      <span class="pill" id="health">Checking...</span>
+    </div>
+  </header>
+  <main>
+    <div class="card">
+      <label>Instruction</label>
+      <textarea id="instruction" placeholder="Describe what you want the factory to do..."></textarea>
+      <button id="runBtn" onclick="run()">&#9654; Run Factory</button>
+      <p class="muted" style="margin-top:10px">
+        API docs: <a href="/docs" target="_blank">/docs</a> &bull; Diagnostics: <a href="/diag" target="_blank">/diag</a>
+      </p>
+      <div class="row" style="margin-top:10px">
+        <span class="tag">POST /run</span>
+        <span class="tag">GET /health</span>
+      </div>
+    </div>
+    <div class="card">
+      <label>Output</label>
+      <pre id="out">Awaiting instruction...</pre>
+      <p class="muted" id="meta" style="margin-top:10px">Idle</p>
+    </div>
+  </main>
+<script>
+async function ping(){
+  try{const r=await fetch("/health");const d=await r.json();
+  document.getElementById("health").textContent=(d.status==="ok")?"Live":"Degraded";}
+  catch(e){document.getElementById("health").textContent="Offline";}
+}
+async function run(){
+  const btn=document.getElementById("runBtn");
+  const out=document.getElementById("out");
+  const meta=document.getElementById("meta");
+  const instruction=document.getElementById("instruction").value.trim();
+  if(!instruction){out.textContent="Enter an instruction.";return;}
+  btn.disabled=true;out.style.color="#b7f7c2";out.textContent="Running...";
+  const t0=Date.now();
+  try{
+    const res=await fetch("/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({instruction})});
+    const data=await res.json();
+    const secs=((Date.now()-t0)/1000).toFixed(2);
+    meta.textContent="HTTP "+res.status+" \u2022 "+secs+"s";
+    if(res.ok&&data.status==="success"){
+      out.textContent=(data.result&&data.result.content)?data.result.content:JSON.stringify(data,null,2);
+    }else{out.style.color="#ff8b8b";out.textContent=JSON.stringify(data,null,2);}
+  }catch(e){out.style.color="#ff8b8b";out.textContent="Network error: "+e.message;meta.textContent="Failed";}
+  finally{btn.disabled=false;}
+}
+ping();setInterval(ping,30000);
+</script>
+</body>
+</html>

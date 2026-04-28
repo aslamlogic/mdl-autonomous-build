@@ -1,42 +1,29 @@
-import json
 import os
-from typing import Any, Dict, List
-
 from openai import OpenAI
+from datetime import datetime
 
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-_client = None
+def generate(prompt: str, repairs: list = None, allowed_files: list = None) -> dict:
+    """Fixed LLM call per SMR v5.6 and OpenAI client requirements"""
+    print(f"[{datetime.now()}] LLM generate called with prompt length: {len(prompt)}")
 
-
-def _get_client():
-    global _client
-    if _client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set")
-        _client = OpenAI(api_key=api_key)
-    return _client
-
-
-def generate(
-    spec_text: str,
-    repair_contract: List[Dict[str, Any]],
-    allowed_files: List[str],
-) -> Dict[str, str]:
-
-    client = _get_client()
-
-    # SAFE minimal call (no complex schema assumptions)
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        input="Return JSON: {\"files\": []}"
-    )
-
-    text = response.choices[0].message.content
+    if repairs:
+        prompt += "\n\nPrevious repairs attempted: " + str(repairs)
 
     try:
-        payload = json.loads(text)
-    except Exception:
-        return {}
-
-    return {}
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert autonomous software engineer. Follow USS v2.1 and SMR v5.6 strictly. Produce clean, working code."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+            max_tokens=4000
+        )
+        content = response.choices[0].message.content
+        print(f"[{datetime.now()}] LLM response received ({len(content)} chars)")
+        return {"content": content, "status": "success"}
+    except Exception as e:
+        print(f"LLM Error: {type(e).__name__}: {e}")
+        return {"content": f"Error: {str(e)}", "status": "error"}

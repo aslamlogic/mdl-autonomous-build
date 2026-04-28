@@ -1,5 +1,4 @@
-# render.yaml
-# Declarative Render service blueprint for mdl-autonomous-build.
+# render.yaml - authoritative Render blueprint
 services:
   - type: web
     name: mdl-autonomous-build
@@ -11,7 +10,7 @@ services:
     buildCommand: >
       python -m pip install --upgrade pip &&
       if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    startCommand: python -m uvicorn meta_ui.main:app --host 0.0.0.0 --port $PORT
+    startCommand: ./render-start.sh
     healthCheckPath: /health
     envVars:
       - key: PYTHONUNBUFFERED

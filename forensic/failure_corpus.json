@@ -1,0 +1,27 @@
+{
+  "corpus_version": "2.1",
+  "generated_at": "2026-04-28T18:08:06.072547+00:00",
+  "specimen_defects": [
+    {
+      "ku_id": "KU-19",
+      "failure_class": "boundary_failure",
+      "description": "meta_ui/api.py syntactically broken"
+    },
+    {
+      "ku_id": "KU-20",
+      "failure_class": "workflow_conflict",
+      "description": "Multiple active GitHub workflows"
+    },
+    {
+      "ku_id": "KU-18",
+      "failure_class": "orchestration_failure",
+      "description": "Validators not wired into unified P6 chain"
+    },
+    {
+      "ku_id": "KU-21",
+      "failure_class": "testing_gap",
+      "description": "P6 testing not inside every P7 iteration"
+    }
+  ],
+  "status": "ready_for_full_p6_p7_injection"
+}

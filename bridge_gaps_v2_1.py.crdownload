@@ -1,0 +1,343 @@
+#!/usr/bin/env python3
+"""bridge_gaps_v2_1.py
+
+Purpose
+- Forensically compare this repo against the Formal Technical Specification for Autonomous SW Factory v2.1.
+- Identify concrete, repo-evidenced gaps.
+- Bridge the *critical* gaps that currently prevent the /run endpoint from functioning reliably on Render.
+
+Governance
+- Designed to support SMR v5.6 truth/evidence discipline by producing an evidence-backed report.
+
+What it changes (apply mode)
+1) render.yaml: stop overwriting requirements.txt; install from repo requirements.txt.
+2) requirements.txt: ensure coherent FastAPI/Pydantic/Uvicorn/OpenAI pins.
+3) engine/llm_interface.py: ensure OpenAI chat call always supplies model+messages; fail gracefully if API key missing.
+4) meta_ui/api.py: return structured JSON and HTTP 500 on factory failure; add /diag for self-diagnosis.
+
+Usage
+- Report only:
+    python bridge_gaps_v2_1.py --report-only
+- Apply fixes:
+    python bridge_gaps_v2_1.py --apply
+
+Then commit+push.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+
+REPO_ROOT_MARKERS = ["render.yaml", "requirements.txt", "meta_ui", "engine", "iteration"]
+
+PINNED_REQUIREMENTS = {
+    "fastapi": "0.115.0",
+    "uvicorn": "0.30.6",
+    "openai": "1.35.0",
+    "pydantic": "2.8.2",
+}
+
+
+@dataclass
+class Gap:
+    gap_id: str
+    spec_refs: List[str]
+    severity: str
+    evidence: List[str]
+    repo_paths: List[str]
+    bridge_action: str
+
+
+def _now_stamp() -> str:
+    return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+
+def _repo_root() -> Path:
+    here = Path.cwd()
+    for _ in range(6):
+        if all((here / m).exists() for m in REPO_ROOT_MARKERS):
+            return here
+        here = here.parent
+    raise SystemExit(
+        "ERROR: Could not locate repo root. Run this from the repository root (where render.yaml and requirements.txt exist)."
+    )
+
+
+def _read_text(p: Path) -> str:
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+def _write_text(p: Path, s: str) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(s, encoding="utf-8")
+
+
+def _backup(paths: List[Path], backup_root: Path) -> None:
+    backup_root.mkdir(parents=True, exist_ok=True)
+    for p in paths:
+        if p.exists():
+            rel = p.relative_to(_repo_root())
+            dest = backup_root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, dest)
+
+
+def _ensure_requirement(req_text: str, name: str, version: str) -> Tuple[str, bool]:
+    """Ensure `name==version` exists, replacing any other pin of that name."""
+    changed = False
+    lines = req_text.splitlines()
+    out = []
+    pattern = re.compile(rf"^\s*{re.escape(name)}\s*(==|>=|<=|~=|>|<)\s*([0-9A-Za-z\.\-]+)\s*$")
+    found = False
+    for line in lines:
+        if pattern.match(line):
+            found = True
+            wanted = f"{name}=={version}"
+            if line.strip() != wanted:
+                out.append(wanted)
+                changed = True
+            else:
+                out.append(line)
+            continue
+        out.append(line)
+    if not found:
+        out.append(f"{name}=={version}")
+        changed = True
+    # drop empty tail
+    out2 = [l for l in out if l.strip() != ""]
+    return "\n".join(out2) + "\n", changed
+
+
+def _render_yaml_bridge(render_yaml: str) -> Tuple[str, bool, List[str]]:
+    """Bridge the destructive buildCommand that overwrites requirements.txt."""
+    evidence = []
+    changed = False
+
+    if "buildCommand" in render_yaml and "echo \"fastapi" in render_yaml and "requirements.txt" in render_yaml:
+        evidence.append("render.yaml buildCommand overwrites requirements.txt and omits openai dependency")
+
+    # Replace buildCommand block with a safe one if it contains destructive echo-lines.
+    # This is deliberately conservative (only triggers on the exact anti-pattern).
+    anti_pattern = re.compile(r"buildCommand:\s*\|\n(?:\s+.*\n)+?\s+pip install -r requirements\.txt\s*\n", re.MULTILINE)
+    if anti_pattern.search(render_yaml) and "echo \"fastapi" in render_yaml and "echo \"pydantic" in render_yaml:
+        safe_block = (
+            "buildCommand: |\n"
+            "      pip install -r requirements.txt\n"
+        )
+        render_yaml2 = anti_pattern.sub(safe_block, render_yaml)
+        if render_yaml2 != render_yaml:
+            render_yaml = render_yaml2
+            changed = True
+    return render_yaml, changed, evidence
+
+
+def _write_llm_interface() -> str:
+    return """import os\nfrom datetime import datetime\n\ntry:\n    from openai import OpenAI\nexcept Exception as e:  # pragma: no cover\n    OpenAI = None\n\n\nDEFAULT_MODEL = os.getenv(\"OPENAI_MODEL\", os.getenv(\"MODEL\", \"gpt-4o-mini\"))\n\n\ndef generate(prompt: str, repairs: list | None = None, allowed_files: list | None = None) -> dict:\n    \"\"\"\n    Deterministic LLM call wrapper.\n    Guarantees OpenAI chat call includes required `model` and `messages`.\n    Fails gracefully if OPENAI_API_KEY or openai package is missing.\n    \"\"\"\n    print(f\"[{datetime.now()}] LLM generate called (prompt_len={len(prompt)})\")\n\n    if repairs:\n        prompt += \"\\n\\nPrevious repairs attempted: \" + str(repairs)\n\n    api_key = os.getenv(\"OPENAI_API_KEY\")\n    if not api_key:\n        return {\n            \"status\": \"error\",\n            \"error_type\": \"missing_env\",\n            \"message\": \"OPENAI_API_KEY is not set\",\n            \"content\": \"\",\n        }\n\n    if OpenAI is None:\n        return {\n            \"status\": \"error\",\n            \"error_type\": \"missing_dependency\",\n            \"message\": \"openai package is not available in this environment\",\n            \"content\": \"\",\n        }\n\n    client = OpenAI(api_key=api_key)\n\n    system_msg = (\n        \"You are an expert autonomous software engineer. \"\n        \"Follow Formal Technical Specification v2.1 and SMR v5.6 strictly. \"\n        \"Produce clean, working code.\"\n    )\n\n    try:\n        response = client.chat.completions.create(\n            model=DEFAULT_MODEL,\n            messages=[\n                {\"role\": \"system\", \"content\": system_msg},\n                {\"role\": \"user\", \"content\": prompt},\n            ],\n            temperature=0.0,\n            max_tokens=4000,\n        )\n        content = response.choices[0].message.content or \"\"\n        print(f\"[{datetime.now()}] LLM response received (chars={len(content)})\")\n        return {\"status\": \"success\", \"content\": content}\n    except Exception as e:\n        return {\n            \"status\": \"error\",\n            \"error_type\": type(e).__name__,\n            \"message\": str(e),\n            \"content\": \"\",\n        }\n"""
+
+
+def _write_meta_ui_api() -> str:
+    return """from fastapi import FastAPI\nfrom fastapi.middleware.cors import CORSMiddleware\nfrom fastapi.responses import JSONResponse\nfrom pydantic import BaseModel\nfrom typing import Optional\nimport os\nimport sys\n\nfrom iteration.controller import controller\n\napp = FastAPI(title=\"MDL Autonomous Build System - SMR v5.6\")\n\napp.add_middleware(\n    CORSMiddleware,\n    allow_origins=[\"*\"],\n    allow_credentials=True,\n    allow_methods=[\"*\"],\n    allow_headers=[\"*\"],\n)\n\n\nclass BuildRequest(BaseModel):\n    instruction: str\n    spec: Optional[dict] = None\n\n\n@app.get(\"/health\")\ndef health():\n    return {\"status\": \"ok\"}\n\n\n@app.get(\"/diag\")\ndef diag():\n    \"\"\"Self-diagnosis endpoint (non-destructive).\"\"\"\n    return {\n        \"python\": sys.version,\n        \"openai_api_key_set\": bool(os.getenv(\"OPENAI_API_KEY\")),\n        \"openai_model\": os.getenv(\"OPENAI_MODEL\") or os.getenv(\"MODEL\") or \"(default: gpt-4o-mini)\",\n    }\n\n\n@app.post(\"/run\")\ndef run_build(request: BuildRequest):\n    try:\n        result = controller.run(request.instruction)\n        # If the factory signals an error, reflect it via HTTP 500 with structured JSON.
+        if isinstance(result, dict) and result.get(\"status\") == \"error\":\n            return JSONResponse(status_code=500, content={\"status\": \"error\", **result})\n        return {\"status\": \"success\", \"result\": result}\n    except Exception as e:\n        return JSONResponse(status_code=500, content={\"status\": \"error\", \"message\": str(e)})\n"""
+
+
+def build_gaps_report(root: Path) -> List[Gap]:
+    gaps: List[Gap] = []
+
+    render_yaml_path = root / "render.yaml"
+    requirements_path = root / "requirements.txt"
+    llm_path = root / "engine" / "llm_interface.py"
+    api_path = root / "meta_ui" / "api.py"
+
+    render_yaml = _read_text(render_yaml_path) if render_yaml_path.exists() else ""
+
+    # Gap A: destructive render.yaml buildCommand overwrites requirements and can omit dependencies.
+    if "buildCommand" in render_yaml and "echo \"fastapi" in render_yaml and "requirements.txt" in render_yaml:
+        gaps.append(
+            Gap(
+                gap_id="GAP_RENDER_001",
+                spec_refs=[
+                    "Spec v2.1 Req 2.4 Continuous Deployment and Orchestration",
+                    "Spec v2.1 Req 3.2 Reliability",
+                    "Spec v2.1 Req 3.5 Maintainability",
+                ],
+                severity="critical",
+                evidence=[
+                    "render.yaml contains buildCommand that overwrites requirements.txt using echo lines",
+                    "This can drop required dependencies (e.g., openai) and/or force incompatible versions",
+                ],
+                repo_paths=["render.yaml"],
+                bridge_action="Replace buildCommand with 'pip install -r requirements.txt'",
+            )
+        )
+
+    # Gap B: LLM call must supply model+messages, and fail gracefully without key.
+    llm = _read_text(llm_path) if llm_path.exists() else ""
+    if "chat.completions.create" in llm and ("model=" not in llm or "messages=" not in llm):
+        gaps.append(
+            Gap(
+                gap_id="GAP_LLM_001",
+                spec_refs=[
+                    "Spec v2.1 Req 2.1 Automated Code Generation",
+                    "Spec v2.1 Req 4.2 AI-Powered Core",
+                ],
+                severity="critical",
+                evidence=["engine/llm_interface.py calls chat.completions.create without required args"],
+                repo_paths=["engine/llm_interface.py"],
+                bridge_action="Rewrite llm_interface.generate to always pass model+messages",
+            )
+        )
+
+    # Gap C: /run should surface errors deterministically and provide /diag.
+    api = _read_text(api_path) if api_path.exists() else ""
+    if "/diag" not in api:
+        gaps.append(
+            Gap(
+                gap_id="GAP_API_001",
+                spec_refs=[
+                    "Spec v2.1 Req 2.3 Self-Healing and Adaptation",
+                    "Spec v2.1 Req 3.2 Reliability",
+                    "Spec v2.1 Req 4.7 Distributed Tracing and Monitoring (partial: diag endpoint)",
+                ],
+                severity="high",
+                evidence=["meta_ui/api.py does not provide a self-diagnosis endpoint"],
+                repo_paths=["meta_ui/api.py"],
+                bridge_action="Add GET /diag and structured HTTP 500 error response on factory failure",
+            )
+        )
+
+    # Gap D: requirements coherence check (informational)
+    req_txt = _read_text(requirements_path) if requirements_path.exists() else ""
+    missing = []
+    for k, v in PINNED_REQUIREMENTS.items():
+        if re.search(rf"^\s*{re.escape(k)}\s*(==|>=|<=|~=|>|<)", req_txt, re.MULTILINE) is None:
+            missing.append(f"{k}=={v}")
+    if missing:
+        gaps.append(
+            Gap(
+                gap_id="GAP_REQ_001",
+                spec_refs=["Spec v2.1 Req 3.2 Reliability", "Spec v2.1 Req 3.7 Portability"],
+                severity="medium",
+                evidence=["requirements.txt missing pins: " + ", ".join(missing)],
+                repo_paths=["requirements.txt"],
+                bridge_action="Ensure pinned requirements for fastapi/uvicorn/pydantic/openai",
+            )
+        )
+
+    return gaps
+
+
+def apply_bridges(root: Path) -> Dict[str, object]:
+    changed_files: List[str] = []
+    backup_root = root / ".bridge_backups" / _now_stamp()
+
+    targets = [
+        root / "render.yaml",
+        root / "requirements.txt",
+        root / "engine" / "llm_interface.py",
+        root / "meta_ui" / "api.py",
+    ]
+    _backup(targets, backup_root)
+
+    # 1) render.yaml
+    ry = _read_text(root / "render.yaml")
+    ry2, ch, _ = _render_yaml_bridge(ry)
+    if ch:
+        _write_text(root / "render.yaml", ry2)
+        changed_files.append("render.yaml")
+
+    # 2) requirements.txt
+    req = _read_text(root / "requirements.txt")
+    any_req_change = False
+    for name, ver in PINNED_REQUIREMENTS.items():
+        req, did = _ensure_requirement(req, name, ver)
+        any_req_change = any_req_change or did
+    if any_req_change:
+        _write_text(root / "requirements.txt", req)
+        changed_files.append("requirements.txt")
+
+    # 3) llm_interface
+    _write_text(root / "engine" / "llm_interface.py", _write_llm_interface())
+    changed_files.append("engine/llm_interface.py")
+
+    # 4) meta_ui/api.py
+    _write_text(root / "meta_ui" / "api.py", _write_meta_ui_api())
+    changed_files.append("meta_ui/api.py")
+
+    return {
+        "backup_dir": str(backup_root),
+        "changed_files": changed_files,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--report-only", action="store_true")
+    parser.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+
+    if not args.report_only and not args.apply:
+        # default to apply (explicit is better, but we keep it single-command usable)
+        args.apply = True
+
+    root = _repo_root()
+
+    gaps = build_gaps_report(root)
+
+    report = {
+        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+        "spec": "Formal Technical specification for Autonomous SW factory v 2.1",
+        "governance": "SUPRA-METARULES v5.6",
+        "repo_root": str(root),
+        "gaps": [
+            {
+                "gap_id": g.gap_id,
+                "severity": g.severity,
+                "spec_refs": g.spec_refs,
+                "evidence": g.evidence,
+                "repo_paths": g.repo_paths,
+                "bridge_action": g.bridge_action,
+            }
+            for g in gaps
+        ],
+    }
+
+    out_report = root / "forensic_gap_report.json"
+    _write_text(out_report, json.dumps(report, indent=2) + "\n")
+
+    print("Forensic report written:", out_report)
+    print("Gaps found:", len(gaps))
+    for g in gaps:
+        print(f"- {g.gap_id} ({g.severity}): {g.bridge_action}")
+
+    if args.report_only:
+        return
+
+    applied = apply_bridges(root)
+    print("Bridges applied.")
+    print("Backup directory:", applied["backup_dir"])
+    print("Changed files:")
+    for cf in applied["changed_files"]:
+        print("-", cf)
+
+    print("\nNext (no file editing required):")
+    print("1) git add -A")
+    print("2) git commit -m \"SMR v5.6 - Bridge critical gaps vs Spec v2.1\"")
+    print("3) git push")
+    print("\nAfter Render redeploy, test endpoints:")
+    print("- GET  /health")
+    print("- GET  /diag")
+    print("- POST /run  {\"instruction\": \"Return current UTC time as JSON\"}")
+
+
+if __name__ == "__main__":
+    main()

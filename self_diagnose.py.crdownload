@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""
+AUTONOMOUS SELF-DIAGNOSTIC SCRIPT FOR RENDER DEPLOYMENT
+This script will:
+1. Test health endpoint
+2. Test /run with a very simple instruction
+3. Print full error details if 500 occurs
+4. Suggest next steps
+No manual editing required.
+"""
+
+import requests
+import json
+from datetime import datetime
+
+BASE_URL = "https://mdl-autonomous-build.onrender.com"
+
+def print_header(title):
+    print("\n" + "="*80)
+    print(title)
+    print("="*80)
+
+def test_health():
+    print_header("HEALTH CHECK")
+    try:
+        r = requests.get(f"{BASE_URL}/health", timeout=20)
+        print(f"Status: {r.status_code}")
+        try:
+            data = r.json()
+            print(json.dumps(data, indent=2))
+        except:
+            print(r.text)
+        return r.status_code == 200
+    except Exception as e:
+        print(f"Health request failed: {e}")
+        return False
+
+def test_simple_run():
+    print_header("SIMPLE /RUN TEST (Minimal instruction)")
+    payload = {
+        "instruction": "Return current UTC time as JSON with key 'time'.",
+        "spec": {"max_iterations": 3}
+    }
+    try:
+        r = requests.post(
+            f"{BASE_URL}/run",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        print(f"Status Code: {r.status_code}")
+
+        print("\nResponse body:")
+        if r.status_code == 500:
+            print("--- INTERNAL SERVER ERROR ---")
+            print(r.text)
+            print("\nThis usually means an unhandled exception in the FastAPI route.")
+            print("Most common causes on Render:")
+            print("  - Missing required packages in requirements.txt")
+            print("  - Import error in meta_ui/api.py or workers")
+            print("  - Syntax error or undefined variable")
+        else:
+            try:
+                print(json.dumps(r.json(), indent=2))
+            except:
+                print(r.text[:800])
+
+        return r.status_code
+    except Exception as e:
+        print(f"Request failed: {e}")
+        return None
+
+def main():
+    print("=== AUTONOMOUS SELF-DIAGNOSIS v2.1 ===")
+    print("SMR v5.6 - Full system self-diagnosis mode")
+    print(f"Target: {BASE_URL}")
+    print(f"Time: {datetime.now()}")
+    print("="*80)
+
+    health_ok = test_health()
+    print()
+    status = test_simple_run()
+
+    print_header("DIAGNOSIS SUMMARY")
+    if health_ok:
+        print("✅ Health endpoint is working")
+    else:
+        print("❌ Health endpoint failed")
+
+    if status == 200:
+        print("✅ /run endpoint succeeded")
+        print("\nThe autonomous factory is fully operational.")
+    elif status == 500:
+        print("❌ /run endpoint returned Internal Server Error (500)")
+        print("\n**Next step:**")
+        print("1. Go to your Render dashboard")
+        print("2. Open the service 'mdl-autonomous-build'")
+        print("3. Click on 'Logs' tab")
+        print("4. Look at the most recent logs for the exact Python traceback")
+        print("5. Copy and paste the error here (or take a screenshot)")
+    else:
+        print(f"Status was: {status}")
+
+    print("\nSelf-diagnosis completed.")
+    print("Reply with the Render logs if you see a 500 error.")
+
+if __name__ == "__main__":
+    main()

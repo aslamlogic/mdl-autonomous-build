@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""
+SMR v5.6 FULLY AUTONOMOUS SELF-TESTING SCRIPT
+This script automatically:
+1. Tests the health endpoint
+2. Tests the /run endpoint with a real instruction
+3. Prints full diagnostics
+4. Gives clear verdict
+No manual copying. Just run it.
+"""
+
+import requests
+import json
+import time
+from datetime import datetime
+
+BASE_URL = "https://mdl-autonomous-build.onrender.com"
+print("=== SMR v5.6 FULLY AUTONOMOUS SELF-DIAGNOSIS v2.3 ===")
+print(f"Testing live deployment at {BASE_URL}")
+print(f"Time: {datetime.now()}")
+print("=" * 85)
+
+def test_health():
+    print("\n[1/3] Testing /health endpoint...")
+    try:
+        r = requests.get(f"{BASE_URL}/health", timeout=15)
+        print(f"   Status: {r.status_code}")
+        if r.status_code == 200:
+            print("   ✅ Health check PASSED")
+            return True
+        else:
+            print("   ❌ Health check FAILED")
+            return False
+    except Exception as e:
+        print(f"   ❌ Health request failed: {e}")
+        return False
+
+def test_run():
+    print("\n[2/3] Testing /run endpoint with real instruction...")
+    payload = {
+        "instruction": "Create a simple FastAPI endpoint that returns current server time in UTC when GET /time is called. Follow SMR v5.6 and USS v2.1. Output only the code."
+    }
+    try:
+        print("   Sending request...")
+        r = requests.post(
+            f"{BASE_URL}/run",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=45
+        )
+        print(f"   Status Code: {r.status_code}")
+
+        if r.status_code == 200:
+            print("   ✅ /run endpoint returned 200 - SUCCESS")
+            try:
+                data = r.json()
+                print("   Response summary:", json.dumps(data, indent=2)[:300] + "...")
+            except:
+                print("   Raw response:", r.text[:200])
+            return True
+        elif r.status_code == 500:
+            print("   ❌ Still getting 500 Internal Server Error")
+            print("\n   Full error response:")
+            print(r.text)
+            return False
+        else:
+            print(f"   ⚠️ Unexpected status: {r.status_code}")
+            print(r.text[:400])
+            return False
+    except Exception as e:
+        print(f"   ❌ Request exception: {e}")
+        return False
+
+def final_verdict(success_health, success_run):
+    print("\n" + "="*85)
+    print("FINAL SELF-DIAGNOSIS VERDICT")
+    print("="*85)
+    if success_health and success_run:
+        print("✅ FULL SUCCESS - The autonomous software factory is now working correctly.")
+        print("   The LLM interface bug has been resolved.")
+    elif success_health:
+        print("⚠️  PARTIAL SUCCESS - Health works, but /run is still failing.")
+        print("   Check Render Runtime Logs for remaining errors.")
+    else:
+        print("❌ SYSTEM STILL BROKEN")
+        print("   The fix did not resolve the issue. Further debugging required.")
+    print(f"\nSelf-diagnosis completed at {datetime.now()}")
+
+# Run the tests automatically
+health_ok = test_health()
+time.sleep(2)
+run_ok = test_run()
+
+final_verdict(health_ok, run_ok)
+print("\nThis script is fully autonomous per your request. No manual copying needed.")

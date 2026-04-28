@@ -4,9 +4,6 @@ services:
     env: python
     plan: starter
     buildCommand: |
-      echo "fastapi==0.110.0" > requirements.txt
-      echo "pydantic==1.10.13" >> requirements.txt
-      echo "uvicorn==0.27.1" >> requirements.txt
       pip install -r requirements.txt
     startCommand: uvicorn meta_ui.api:app --host 0.0.0.0 --port $PORT
     envVars:

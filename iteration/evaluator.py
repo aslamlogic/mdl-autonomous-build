@@ -1,181 +1,23 @@
-import ast
-import json
-import os
-from typing import Any, Dict, List
-
-
-REPORT_PATH = "reports/validation_default_run.json"
-
-
-def _ensure_reports_dir() -> None:
-    os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
-
-
-def _add_finding(
-    findings: List[Dict[str, Any]],
-    *,
-    category: str,
-    message: str,
-    path: str,
-    failure_code: str,
-) -> None:
-    findings.append(
-        {
-            "category": category,
-            "message": message,
-            "path": path,
-            "failure_code": failure_code,
-        }
-    )
-
-
-def _path_exists(path: str) -> bool:
-    return os.path.exists(path)
-
-
-def _read_file(path: str) -> str:
-    if not _path_exists(path):
-        return ""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def _syntax_check(main_content: str, findings: List[Dict[str, Any]]) -> None:
-    if not main_content.strip():
-        _add_finding(
-            findings,
-            category="STRUCTURE",
-            message="No application source code found for evaluation",
-            path="generated_app/main.py",
-            failure_code="E-STRUCTURE",
-        )
-        return
-
-    try:
-        ast.parse(main_content)
-    except SyntaxError as e:
-        _add_finding(
-            findings,
-            category="SYNTAX",
-            message=f"Syntax error: {e.msg} at line {e.lineno}",
-            path="generated_app/main.py",
-            failure_code="E-SYNTAX",
-        )
-
-
-def _structure_check(findings: List[Dict[str, Any]]) -> None:
-    if not _path_exists("meta_ui/api.py"):
-        _add_finding(
-            findings,
-            category="STRUCTURE",
-            message="Required file missing: meta_ui/api.py",
-            path="meta_ui/api.py",
-            failure_code="E-STRUCTURE",
-        )
-
-    if not _path_exists("apps"):
-        _add_finding(
-            findings,
-            category="STRUCTURE",
-            message="apps/ directory missing",
-            path="apps/",
-            failure_code="E-STRUCTURE",
-        )
-
-    if not (_path_exists("generated_app/main.py") or _path_exists("apps/generated_app/main.py")):
-        _add_finding(
-            findings,
-            category="STRUCTURE",
-            message="No generated main application file found",
-            path="generated_app/main.py",
-            failure_code="E-STRUCTURE",
-        )
-
-
-def _behaviour_check(main_content: str, findings: List[Dict[str, Any]]) -> None:
-    api_source = _read_file("meta_ui/api.py")
-    combined = "\n".join([main_content, api_source])
-
-    if not api_source.strip():
-        _add_finding(
-            findings,
-            category="BEHAVIOUR",
-            message="Cannot run behaviour checks because meta_ui/api.py is missing",
-            path="meta_ui/api.py",
-            failure_code="E-BEHAVIOUR",
-        )
-        return
-
-    if "/health" not in combined:
-        _add_finding(
-            findings,
-            category="BEHAVIOUR",
-            message="Required /health endpoint not found",
-            path="meta_ui/api.py",
-            failure_code="E-BEHAVIOUR",
-        )
-
-    if '"status": "ok"' not in combined and "'status': 'ok'" not in combined and "'status': \"ok\"" not in combined:
-        _add_finding(
-            findings,
-            category="BEHAVIOUR",
-            message='Required /health response {"status": "ok"} not found',
-            path="meta_ui/api.py",
-            failure_code="E-BEHAVIOUR",
-        )
-
-
-def _lwp_check(findings: List[Dict[str, Any]]) -> None:
-    if not _path_exists("iteration/rule_applicator.py"):
-        _add_finding(
-            findings,
-            category="LWP",
-            message="rule_applicator.py missing; deterministic LWP chain cannot be confirmed",
-            path="iteration/rule_applicator.py",
-            failure_code="E-LWP",
-        )
-
-
-def _ui_check(findings: List[Dict[str, Any]]) -> None:
-    api_source = _read_file("meta_ui/api.py")
-
-    if not api_source.strip():
-        _add_finding(
-            findings,
-            category="UI",
-            message="Required UI-related file missing: meta_ui/api.py",
-            path="meta_ui/api.py",
-            failure_code="E-UI",
-        )
-        return
-
-    if "UI_MARKER" not in api_source:
-        _add_finding(
-            findings,
-            category="UI",
-            message="No expected UI markers found in codebase",
-            path="workspace",
-            failure_code="E-UI",
-        )
-
-
+import ast, json, os, re
+from typing import Dict, Any, List
 def evaluate(main_content: str) -> Dict[str, Any]:
-    findings: List[Dict[str, Any]] = []
-
-    _syntax_check(main_content, findings)
-    _structure_check(findings)
-    _behaviour_check(main_content, findings)
-    _lwp_check(findings)
-    _ui_check(findings)
-
-    result: Dict[str, Any] = {
-        "passed": len(findings) == 0,
-        "findings": findings,
-        "report_path": REPORT_PATH,
-    }
-
-    _ensure_reports_dir()
-    with open(REPORT_PATH, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
-
+    findings = []
+    try:
+        if main_content.strip(): ast.parse(main_content)
+    except SyntaxError as e: findings.append({"category": "SYNTAX", "message": str(e), "failure_code": "E-SYNTAX"})
+    for f in ["meta_ui/api.py", "iteration/controller.py", "apps/__init__.py"]:
+        if not os.path.exists(f): findings.append({"category": "STRUCTURE", "message": f"Required file missing: {f}", "failure_code": "E-STRUCTURE"})
+    if "/health" not in main_content or "status" not in main_content: findings.append({"category": "BEHAVIOUR", "message": "Required /health endpoint missing", "failure_code": "E-BEHAVIOUR"})
+    for p in [r"subprocess", r"eval\s*\(", r"exec\s*\(", r"os\.system", r"shell\s*=\s*True"]:
+        if re.search(p, main_content): findings.append({"category": "GOVERNANCE", "message": f"Prohibited pattern: {p}", "failure_code": "E-GOVERNANCE"})
+    for p in [r"requests\.", r"OPENAI_API_KEY\s*=\s*["']", r"GITHUB_TOKEN\s*=\s*["']"]:
+        if re.search(p, main_content): findings.append({"category": "SECURITY", "message": f"Security risk: {p}", "failure_code": "E-SECURITY"})
+    if "rule_applicator" not in main_content and "apply_rules" not in main_content: findings.append({"category": "LWP", "message": "LWP rule applicator missing", "failure_code": "E-LWP"})
+    if "UI_MARKER" not in main_content and "spec_upload" not in main_content: findings.append({"category": "UI", "message": "Required UI markers missing", "failure_code": "E-UI"})
+    if "Policy_Set" not in main_content or "Routing_Policy" not in main_content: findings.append({"category": "SCHEMA", "message": "ER Policy missing", "failure_code": "E-SCHEMA"})
+    if len(findings) > 0: findings.append({"category": "FAILURE_CLASS", "message": f"{len(findings)} issues classified", "failure_code": "E-FAILURE_CLASS"})
+    if "Entity" not in main_content or "Relationship" not in main_content: findings.append({"category": "ER_INTEGRITY", "message": "KU Entity/Relationship model incomplete", "failure_code": "E-ER_INTEGRITY"})
+    passed = len(findings) == 0
+    result = {"passed": passed, "findings": findings, "test_layers": 10}
+    with open("reports/validation_default_run.json", "w", encoding="utf-8") as f: json.dump(result, f, indent=2)
     return result

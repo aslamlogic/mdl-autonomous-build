@@ -1,61 +1,31 @@
+from fastapi import FastAPI, HTTPException
+from meta_ui.models import RunCommand, RunResult
+import logging, traceback
 
-from .models import RunCommand, RunResult
-@app.post("/run", response_model=RunResult)
-async def run_handler(cmd: RunCommand):
-    # Industrial Grade: Explicit Model Passing
-    return generate(cmd.instruction, cmd.payload, cmd.metadata)
+logger = logging.getLogger(__name__)
+app = FastAPI()
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from pathlib import Path
-from typing import Optional
-import os, sys
-
-from iteration.controller import controller
-
-app = FastAPI(title="MDL Autonomous Factory")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-STATIC_DIR = Path(__file__).parent.parent / "static"
-
-class RunRequest(BaseModel):
-    instruction: str
-    spec: Optional[dict] = None
+def generate(command: RunCommand) -> RunResult:
+    instruction = command.instruction
+    payload = command.payload
+    metadata = command.metadata
+return RunResult(status='ok', output={'instruction': command.instruction})
 
 @app.get("/")
-def ui_root():
-    idx = STATIC_DIR / "index.html"
-    if idx.exists():
-        return FileResponse(str(idx))
-    return {"status": "ok", "ui": "missing static/index.html"}
-
-@app.get("/health")
-def health():
+async def root():
     return {"status": "ok"}
 
-@app.get("/diag")
-def diag():
-    return {
-        "python": sys.version,
-        "openai_api_key_set": bool(os.getenv("OPENAI_API_KEY")),
-        "openai_model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    }
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
-@app.post("/run")
-def run(req: RunRequest):
+@app.post("/run", response_model=RunResult)
+async def run_handler(cmd: RunCommand):
     try:
-        result = controller.run(req.instruction)
-        if isinstance(result, dict) and result.get("status") == "error":
-            return JSONResponse(status_code=500, content={"status": "error", **result})
-        return {"status": "success", "result": result}
+        result = generate(cmd)
+        if isinstance(result, dict):
+            return RunResult(**result)
+        return result
     except Exception as e:
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))

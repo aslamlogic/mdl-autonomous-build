@@ -1,3 +1,10 @@
+
+from .models import RunCommand, RunResult
+@app.post("/run", response_model=RunResult)
+async def run_handler(cmd: RunCommand):
+    # Industrial Grade: Explicit Model Passing
+    return generate(cmd.instruction, cmd.payload, cmd.metadata)
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware

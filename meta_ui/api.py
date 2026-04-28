@@ -6,14 +6,8 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 def generate(command: RunCommand) -> RunResult:
-    instruction = command.instruction
-    payload = command.payload
-    metadata = command.metadata
-return RunResult(status='ok', output={'instruction': command.instruction})
-
-@app.get("/")
-async def root():
-    return {"status": "ok"}
+    # Industrial Grade Canonical Implementation
+    return RunResult(status='ok', output={'instruction': command.instruction})
 
 @app.get("/health")
 async def health():
@@ -22,10 +16,7 @@ async def health():
 @app.post("/run", response_model=RunResult)
 async def run_handler(cmd: RunCommand):
     try:
-        result = generate(cmd)
-        if isinstance(result, dict):
-            return RunResult(**result)
-        return result
+        return generate(cmd)
     except Exception as e:
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))

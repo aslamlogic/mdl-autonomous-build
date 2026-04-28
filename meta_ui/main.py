@@ -1,12 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 import os
-import json
 
 app = FastAPI(title="MDL Autonomous Build Factory")
 
-# Base HTML Template (Tailwind + Lucide Icons)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -26,42 +23,35 @@ HTML_TEMPLATE = """
             </div>
         </div>
     </nav>
-
     <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <!-- Control Panel -->
         <div class="md:col-span-1 space-y-6">
             <div class="bg-slate-800/50 rounded-xl border border-slate-700 p-6">
-                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <i data-lucide="play" class="w-5 h-5 text-blue-400"></i> Trigger Build
+                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2 font-mono">
+                    <i data-lucide="play" class="w-5 h-5 text-blue-400"></i> TRIGGER_BUILD
                 </h2>
                 <div class="space-y-4">
-                    <input id="build-cmd" type="text" placeholder="Build Instruction..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
-                    <button onclick="runBuild()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 rounded-lg transition-all">Execute Build</button>
+                    <input id="build-cmd" type="text" placeholder="Build Instruction..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    <button onclick="runBuild()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-all font-mono uppercase tracking-widest">Execute</button>
                 </div>
             </div>
         </div>
-
-        <!-- Audit & Logs -->
         <div class="md:col-span-2 space-y-6">
             <div class="bg-slate-800/50 rounded-xl border border-slate-700 p-6 overflow-hidden">
-                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <i data-lucide="terminal" class="w-5 h-5 text-emerald-400"></i> Error & Solution Log
+                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2 font-mono">
+                    <i data-lucide="terminal" class="w-5 h-5 text-emerald-400"></i> CAPTURE_SINK_STREAM
                 </h2>
                 <div id="log-container" class="bg-slate-900 rounded-lg p-4 h-[400px] font-mono text-xs overflow-y-auto space-y-2 border border-slate-800">
-                    <div class="text-slate-500 italic">Initializing stream...</div>
+                    <div class="text-slate-500 italic">Connected to Factory Worker...</div>
                 </div>
             </div>
         </div>
     </main>
-
     <script>
         lucide.createIcons();
-        
         async function runBuild() {
             const cmd = document.getElementById('build-cmd').value;
             const container = document.getElementById('log-container');
-            container.innerHTML += `<div class="text-blue-400">[SYSTEM] Invoking: ${cmd}</div>`;
-            
+            container.innerHTML += `<div class="text-blue-400">[CMD] ${cmd}</div>`;
             try {
                 const res = await fetch('/run', {
                     method: 'POST',
@@ -69,9 +59,9 @@ HTML_TEMPLATE = """
                     body: JSON.stringify({command: cmd})
                 });
                 const data = await res.json();
-                container.innerHTML += `<div class="text-green-400">[SUCCESS] Result: ${JSON.stringify(data)}</div>`;
+                container.innerHTML += `<div class="text-green-400">[ACK] ${JSON.stringify(data)}</div>`;
             } catch (err) {
-                container.innerHTML += `<div class="text-red-400">[ERROR] ${err}</div>`;
+                container.innerHTML += `<div class="text-red-400">[ERR] ${err}</div>`;
             }
         }
     </script>
@@ -85,10 +75,9 @@ async def get_index():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "autonomous_p13"}
+    return {"status": "ok", "mode": "provisioned_api_sync"}
 
-# Placeholder for the existing P13 run endpoint
 @app.post("/run")
 async def run(request: Request):
     data = await request.json()
-    return {"status": "accepted", "instruction": data.get("command"), "worker": "factory_bot_01"}
+    return {"status": "accepted", "instruction": data.get("command")}

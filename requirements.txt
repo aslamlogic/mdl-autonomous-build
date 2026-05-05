@@ -1,5 +1,5 @@
 aiofiles==25.1.0
-anyio==4.12.1
+anyio==3.7.1
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 arrow==1.4.0
@@ -30,7 +30,6 @@ httpcore==0.18.0
 httpx==0.25.0
 idna==3.11
 ipykernel==7.2.0
-ipython==9.11.0
 ipython_pygments_lexers==1.1.1
 isoduration==20.11.0
 jedi==0.19.2
@@ -74,6 +73,7 @@ pycparser==3.0
 pydantic==1.10.13
 Pygments==2.19.2
 python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
 python-json-logger==4.0.0
 python-multipart==0.0.27
 PyYAML==6.0.3

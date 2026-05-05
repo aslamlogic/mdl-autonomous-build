@@ -33,12 +33,11 @@ async def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "SST v2.2", "smr": "v5.6"}
+    return {"status": "ok", "version": "SST v2.2"}
 
 @app.post("/run")
 def run_build(request: BuildRequest):
     try:
-        result = controller.run(request.instruction)
-        return {"status": "success", "result": result}
+        return {"status": "success", "result": controller.run(request.instruction)}
     except Exception as e:
         return {"status": "error", "message": str(e)}

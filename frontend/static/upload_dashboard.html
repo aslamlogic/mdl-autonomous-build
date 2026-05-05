@@ -1,0 +1,32 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>MDL FACTORY</title><style>
+body { background: #071024; color: #e6f3f5; font-family: sans-serif; padding: 20px; }
+.card { background: #0b1530; padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
+button { background: #00b4a6; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+pre { background: #02131a; padding: 10px; height: 300px; overflow: auto; border-radius: 5px; color: #00ffcc; border: 1px solid #111; }
+</style></head><body>
+<h1>MDL Autonomous Factory v2.2.1</h1>
+<div class="card"><h3>Upload Specification</h3><input type="file" id="f" multiple><input type="text" id="t" placeholder="Build Title"><button onclick="run()">BUILD SYSTEM</button></div>
+<div class="card" id="bl"></div><div class="card"><pre id="lp">System Idle...</pre></div>
+<script>
+async function run() {
+    const fd = new FormData();
+    for(let file of document.getElementById('f').files) fd.append('files', file);
+    fd.append('title', document.getElementById('t').value);
+    const r = await fetch('/upload-spec', {method:'POST', body:fd});
+    const d = await r.json(); track(d.build_id);
+}
+function track(id) {
+    const es = new EventSource(`/builds/${id}/events`);
+    document.getElementById('lp').innerText = `Tracking Build: ${id}\n`;
+    es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('lp').innerText += `> ${data.msg}\n`;
+        document.getElementById('lp').scrollTop = document.getElementById('lp').scrollHeight;
+    };
+}
+async function lb() {
+    const r = await fetch('/builds'); const d = await r.json();
+    document.getElementById('bl').innerHTML = d.map(b => `<p>${b.title} [${b.status}] <button onclick="track('${b.id}')">TRACK</button></p>`).join('');
+}
+setInterval(lb, 5000); lb();
+</script></body></html>

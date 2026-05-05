@@ -1,11 +1,41 @@
-from fastapi import FastAPI, UploadFile, File, Request; from fastapi.middleware.cors import CORSMiddleware; import os, base64, requests, threading
-app = FastAPI(); app.add_middleware(CORSMiddleware, allow_origins=["*"])
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from iteration.controller import controller
+import uvicorn
+from pydantic import BaseModel
+from typing import Optional
+
+app = FastAPI(title="MDL Autonomous Build System - SMR v5.6 Fixed")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class BuildRequest(BaseModel):
+    instruction: str
+    spec: Optional[dict] = None
+
 @app.get("/health")
-async def h(): return {"status":"ok","controller":True}
-@app.post("/upload-spec")
-async def u(file: UploadFile = File(...)):
-    c = await file.read(); b = base64.b64encode(c).decode()
-    r = requests.put(f"https://api.github.com/repos/{os.getenv('GITHUB_REPO')}/contents/specs/{file.filename}", headers={"Authorization": f"token {os.getenv('GITHUB_TOKEN')}"}, json={"message": "upload spec", "content": b})
-    return {"status": r.status_code}
+def health():
+    return {"status": "ok"}
+
 @app.post("/run")
-async def r(req: Request): return {"status":"accepted"}
+def run_build(request: BuildRequest):
+    print("Received build request")
+    try:
+        result = controller.run(request.instruction)
+        return {
+            "status": "success",
+            "result": result,
+            "message": "Build completed under SMR v5.6"
+        }
+    except Exception as e:
+        print(f"Error in /run: {e}")
+        return {"status": "error", "message": str(e)}
+
+if __name__ == "__main__":
+    uvicorn.run("meta_ui.api:app", host="0.0.0.0", port=10000, reload=False)

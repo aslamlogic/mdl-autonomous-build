@@ -1,7 +1,7 @@
 from engine.llm_interface import generate
 from datetime import datetime
 
-class IterationController:
+class BuildController:
     def __init__(self):
         self.allowed_files = ["main.py", "api.py", "requirements.txt"]
 
@@ -9,12 +9,9 @@ class IterationController:
         return self.allowed_files
 
     def run(self, spec_text: str):
-        print(f"[{datetime.now()}] Starting build with spec length: {len(spec_text) if spec_text else 0}")
-        try:
-            result = generate(spec_text, None, self._allowed_files())
-        except Exception as e:
-            result = {"status": "error", "error": str(e)}
+        print(f"[{datetime.now()}] Starting build with spec length: {len(spec_text)}")
+        result = generate(spec_text, None, self._allowed_files())
         print(f"[{datetime.now()}] Build completed with status: {result.get('status', 'unknown')}")
         return result
 
-controller = IterationController()
+controller = BuildController()

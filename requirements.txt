@@ -1,6 +1,4 @@
-fastapi
-uvicorn
-pydantic
-openai
-requests
-python-multipart
+fastapi==0.115.0
+uvicorn==0.30.6
+openai==1.35.0
+pydantic==2.8.2

@@ -24,7 +24,7 @@ class BuildRequest(BaseModel):
     instruction: str
     spec: Optional[dict] = None
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root():
     index_path = static_dir / "index.html"
     if index_path.exists():

@@ -1,0 +1,7 @@
+{
+  "AUTH_SPEC_POINTER": "./SPECIFICATION_FOR_AUTONOMOUS_SOFTWARE_FACTORY_V2.2.txt",
+  "AUTH_RULES_POINTER": "./smr_v5.6_canonical.txt",
+  "ARC_LOCK": true,
+  "TARGET_REPO": "aslamlogic/evidentia-app",
+  "LAST_SYNC": null
+}

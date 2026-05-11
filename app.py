@@ -3,26 +3,26 @@ import datetime
 
 app = Flask(__name__)
 
-@app.route('/api/calculate_tier', methods=['POST'])
-def calculate_tier():
-    # Forensic application of KUP v1.5 § 1.2 and § 8.4
-    n_ku = request.json.get('normative_count', 0)
-    e_ku = request.json.get('empirical_count', 0)
+@app.route('/api/forensic_compare', methods=['POST'])
+def compare():
+    # Simulation based on Knowledge Unit Protocol v1.5 structural rules
+    case_data = request.json.get('data', '')
     
-    ratio = n_ku / e_ku if e_ku > 0 else 0
+    # 1. Swarm Heuristic
+    swarm_complexity = len(case_data.split()) / 500 # Simple word count logic
     
-    if ratio > 0.6:
-        tier, model = "EXPERT", "GPT-4o / Frontier"
-    elif ratio > 0.2:
-        tier, model = "PROFESSIONAL", "Claude 3.5 Sonnet"
-    else:
-        tier, model = "STANDARD", "Llama 3-8B"
-        
+    # 2. Protocol Forensic (Simulated extraction of discrete claims)
+    normative_kus = 18  # Extracted § Clauses from Spec v2.2
+    empirical_kus = 12  # Extracted facts from Case
+    ratio = normative_kus / empirical_kus
+    protocol_complexity = (ratio * 10) / 2 # KUP v1.5 weighted scalar
+    
     return jsonify({
-        "ratio": round(ratio, 2),
-        "tier": tier,
-        "assigned_model": model,
-        "timestamp": datetime.datetime.now().strftime('%H:%M:%S')
+        "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
+        "swarm_score": round(swarm_complexity, 1),
+        "protocol_score": round(protocol_complexity, 1),
+        "tier": "EXPERT" if ratio > 0.6 else "PROFESSIONAL",
+        "model": "GPT-4o (Frontier)" if ratio > 0.6 else "Sonnet 3.5"
     })
 
-# ... Unified Sidebar HUD Logic ...
+# ... HUD Template with Comparison Graphs ...

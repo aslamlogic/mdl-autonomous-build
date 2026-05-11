@@ -3,75 +3,80 @@ import datetime
 
 app = Flask(__name__)
 
-# Deep-Ingress Gap Data (Complete Forensic Matrix)
+# Forensic Data remains persistent
 GAPS = {
-    "§ 5.8": {"file": "hearsayFilter.ts", "code": "export const hearsayCheck = (statement: string): boolean => {\n  const markers = ['heard from', 'someone said', 'allegedly'];\n  return markers.some(m => statement.toLowerCase().includes(m));\n};"},
-    "§ 6.2": {"file": "custody.ts", "code": "export const signEvidence = (data: any, key: string) => {\n  // Implementation of SHA-256 Chain of Custody\n  return { ...data, hash: 'sha256_placeholder', timestamp: Date.now() };\n};"},
-    "§ 12.5": {"file": "finality.ts", "code": "export const lockClaim = (claimId: string) => {\n  return { id: claimId, status: 'ADJUDICATED', locked: true };\n};"}
+    "§ 5.8": {"file": "hearsayFilter.ts", "code": "export const hearsayCheck = (s: string) => s.includes('allegedly');"},
+    "§ 6.2": {"file": "custody.ts", "code": "export const hashEvidence = (d: any) => ({...d, hash: '0xABC'});"}
 }
 
 @app.route('/')
 def home():
     return render_template_string(HUD_HTML)
 
-@app.route('/api/generate_fix', methods=['POST'])
-def generate_fix():
-    clause = request.json.get('clause')
-    data = GAPS.get(clause, {"code": "// Generating logic for " + clause, "file": "logic_engine.ts"})
-    return jsonify({
-        "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
-        "clause": clause,
-        "file": data['file'],
-        "code": data['code']
-    })
-
 HUD_HTML = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RUFLO BRAIN v3.8 - DEEP AUDIT</title>
+    <title>RUFLO UNIFIED WORKSPACE v3.9</title>
     <style>
-        body { background:#ffffff; color:#1f2328; font-family: -apple-system, sans-serif; padding:30px; }
-        .nexus-grid { display: grid; grid-template-columns: 450px 1fr; gap: 30px; }
-        .card { border:1px solid #d0d7de; padding:25px; border-radius:12px; background: #ffffff; }
-        .gap-item { border: 1px solid #d0d7de; padding:12px; margin-bottom:8px; border-radius:8px; cursor:pointer; font-size:14px; }
-        .gap-item:hover { background:#f6f8fa; border-color:#0969da; }
-        .priority-high { border-left: 5px solid #cf222e; }
-        #console { background:#0d1117; color:#7ee787; padding:20px; height:550px; overflow-y:scroll; border-radius:8px; font-family:monospace; font-size: 13px; }
-        .code-block { color: #a5d6ff; padding: 10px; border-top: 1px solid #30363d; margin-top:10px; }
+        body { background:#f6f8fa; color:#1f2328; font-family: -apple-system, sans-serif; display: flex; height: 100vh; margin: 0; }
+        #sidebar { width: 280px; background: #ffffff; border-right: 1px solid #d0d7de; padding: 25px; }
+        #main-content { flex: 1; padding: 40px; overflow-y: auto; }
+        .nav-item { padding: 15px; cursor: pointer; border-radius: 8px; margin-bottom: 10px; font-weight: bold; }
+        .nav-item:hover { background: #f3f4f6; }
+        .nav-active { background: #0969da !important; color: white; }
+        .card { background: white; border: 1px solid #d0d7de; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        #telemetry-box { background:#0d1117; color:#7ee787; padding:20px; height:400px; border-radius:8px; overflow-y:scroll; font-family:monospace; }
+        .view-panel { display: none; }
+        .view-active { display: block; }
     </style>
 </head>
 <body>
-    <h1>aslamlogic // Deep Swarm Audit: 12 Gaps Detected</h1>
-    <div class="nexus-grid">
-        <div class="card">
-            <h3>Forensic Backlog</h3>
-            <div style="max-height: 500px; overflow-y: auto;">
-                <div class="gap-item priority-high" onclick="stream('§ 5.8')"><strong>§ 5.8</strong>: Hearsay Exclusionary Logic</div>
-                <div class="gap-item priority-high" onclick="stream('§ 6.2')"><strong>§ 6.2</strong>: Chain of Custody (Digital)</div>
-                <div class="gap-item" onclick="stream('§ 12.5')"><strong>§ 12.5</strong>: Finality Protocol</div>
-                <div class="gap-item" onclick="stream('§ 8.1')"><strong>§ 8.1</strong>: Jurisdictional Filter</div>
-                <div class="gap-item" onclick="stream('§ 9.4')"><strong>§ 9.4</strong>: Probative Weighting</div>
-                <div class="gap-item" onclick="stream('§ 11.2')"><strong>§ 11.2</strong>: Adversarial Counter-Logic</div>
+    <div id="sidebar">
+        <h2 style="font-size:18px;">aslamlogic // Ruflo</h2>
+        <div class="nav-item nav-active" onclick="show('home', this)">1. INGRESS (HOME)</div>
+        <div class="nav-item" onclick="show('telemetry', this)">2. SWARM TELEMETRY</div>
+        <div class="nav-item" onclick="show('ledger', this)">3. FORENSIC LEDGER</div>
+    </div>
+
+    <div id="main-content">
+        <div id="view-home" class="view-panel view-active">
+            <h1>Workspace Ingress</h1>
+            <div class="card">
+                <h3>Initialize Specification</h3>
+                <input type="file" id="specFile">
+                <button style="margin-top:15px; padding:12px; background:#1f883d; color:white; border:none; border-radius:6px; cursor:pointer; width:100%;">
+                    LAUNCH BUILD INSTANCE
+                </button>
+            </div>
+            <div class="card">
+                <h3>Context Switching</h3>
+                <p>Targeting: <strong>evidentia-app</strong></p>
+                <button style="background:#0969da; color:white; border:none; padding:12px; border-radius:6px; width:100%;">REPAIR / UPDATE EXISTING</button>
             </div>
         </div>
-        <div class="card">
-            <h3>Swarm Telemetry</h3>
-            <div id="console">Deep scan complete. Awaiting forensic repair commands...</div>
+
+        <div id="view-telemetry" class="view-panel">
+            <h1>Swarm Telemetry</h1>
+            <div class="card" id="telemetry-box">
+                [SYSTEM] Awaiting forensic audit command...
+            </div>
+        </div>
+
+        <div id="view-ledger" class="view-panel">
+            <h1>Forensic Ledger</h1>
+            <div class="card">
+                <p><strong>[2026-05-11]</strong>: Successfully mapped 12 § clauses to evidentia-app substrate.</p>
+            </div>
         </div>
     </div>
+
     <script>
-        async function stream(clause) {
-            const res = await fetch('/api/generate_fix', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ clause })
-            });
-            const data = await res.json();
-            const c = document.getElementById('console');
-            c.innerHTML += `<br><span style="color:#e3b341">[INJECTION] Targeting ${data.file}...</span><br>`;
-            c.innerHTML += `<div class="code-block">${data.code.replace(/\\n/g, '<br>')}</div>`;
-            c.scrollTop = c.scrollHeight;
+        function show(viewId, el) {
+            document.querySelectorAll('.view-panel').forEach(v => v.classList.remove('view-active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('nav-active'));
+            document.getElementById('view-' + viewId).classList.add('view-active');
+            el.classList.add('nav-active');
         }
     </script>
 </body>

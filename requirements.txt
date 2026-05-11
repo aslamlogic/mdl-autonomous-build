@@ -1,5 +1,3 @@
 flask
 gunicorn
-pymupdf
-pytesseract
-pdf2image
+pdfminer.six

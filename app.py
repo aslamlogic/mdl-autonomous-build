@@ -1,58 +1,47 @@
 from flask import Flask, request, render_template_string, Response, jsonify
-import time
-import json
+import time, json, uuid
 
 app = Flask(__name__)
 
-# Mock database for the Action Research Ledger (v2.3.2)
+# Concurrent Build Storage
+active_builds = {}
 research_ledger = []
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RUFLO NEXUS v2.3.2 - INTERACTIVE MONITOR</title>
+    <title>RUFLO NEXUS v2.4 - MULTI-BUILD FACTORY</title>
     <style>
-        body { background:#ffffff; color:#1f2328; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; padding:20px; display: flex; gap: 20px; font-size: 15px; }
-        .main-panel { flex: 2; border:1px solid #d0d7de; padding:20px; border-radius:12px; background: #ffffff; }
-        .research-panel { flex: 1.2; display: flex; flex-direction: column; gap: 15px; }
-        .ledger-box { border:1px solid #d0d7de; padding:20px; border-radius:12px; background: #fffef0; flex-grow: 1; overflow-y: scroll; max-height: 400px; }
-        .input-box { border:1px solid #d0d7de; padding:20px; border-radius:12px; background: #f6f8fa; }
-        
-        .layer-box { border:1px solid #d0d7de; margin:10px 0; padding:15px; border-left: 6px solid #d0d7de; border-radius: 6px; font-weight: bold; background: #f6f8fa; }
-        .active { border-left-color: #0969da; background: #ddf4ff; }
-        .completed { border-left-color: #1a7f37; background: #dafbe1; }
-        
-        .research-entry { font-size: 0.9em; border-bottom: 1px solid #d0d7de; padding: 10px 0; }
-        .event-tag { color: #8250df; font-weight: bold; }
-        
-        #log-stream { background:#f6f8fa; color:#24292f; padding:15px; height:180px; overflow-y:scroll; border-radius:8px; font-family:monospace; border: 1px solid #d0d7de;}
-        textarea { width: 95%; height: 60px; margin-top: 10px; border-radius: 6px; border: 1px solid #d0d7de; padding: 8px; font-family: sans-serif; }
-        .btn-green { background:#1f883d; color:white; border:none; padding:10px 15px; border-radius:6px; cursor:pointer; font-weight: bold; }
-        .btn-blue { background:#0969da; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; margin-top: 10px; }
+        body { background:#ffffff; color:#1f2328; font-family: -apple-system, sans-serif; padding:20px; display: flex; gap: 20px; font-size: 14px; }
+        .main-panel { flex: 2; border:1px solid #d0d7de; padding:20px; border-radius:12px; }
+        .research-panel { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        .build-card { border:1px solid #d0d7de; margin:10px 0; padding:15px; border-radius:8px; background: #f6f8fa; }
+        .progress-bar { height: 10px; background: #eaeef2; border-radius: 5px; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: #0969da; width: 0%; transition: width 0.5s; }
+        .ledger-box { border:1px solid #d0d7de; padding:15px; border-radius:12px; background: #fffef0; max-height: 500px; overflow-y: auto; }
+        .btn-green { background:#1f883d; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight: bold; }
+        .status-tag { font-size: 0.8em; padding: 2px 6px; border-radius: 4px; background: #ddf4ff; color: #0969da; float: right; }
     </style>
 </head>
 <body>
     <div class="main-panel">
-        <h1>Visual Nexus v2.3.2</h1>
-        <div id="L1_SPEC" class="layer-box">L1 Spec Ingestion <span id="L1_SPEC_STATUS" style="float:right">WAITING</span></div>
-        <div id="L1_GOV" class="layer-box">L1 Governance Audit <span id="L1_GOV_STATUS" style="float:right">WAITING</span></div>
-        <div id="L1_GEN" class="layer-box">L1 Generation Layer <span id="L1_GEN_STATUS" style="float:right">WAITING</span></div>
-        <div id="log-stream">Ready for Injection...</div>
-        <form id="uploadForm" style="margin-top:15px;">
-            <input type="file" name="file" required>
-            <button type="submit" class="btn-green">INJECT CANONICAL SPEC</button>
-        </form>
+        <h1>Multi-Build Factory Nexus v2.4</h1>
+        <div class="build-card" style="background:#f6f8fa; border: 2px dashed #d0d7de;">
+            <h3>Initialize New Build</h3>
+            <form id="uploadForm">
+                <input type="file" name="file" required>
+                <button type="submit" class="btn-green">START NEW INSTANCE</button>
+            </form>
+        </div>
+        <div id="active-builds-container">
+            <h3>Active Build Queue</h3>
+            </div>
     </div>
 
     <div class="research-panel">
-        <div class="input-box">
-            <h3>Manual Research Input</h3>
-            <textarea id="manualSuggestion" placeholder="Enter improvement or observation here..."></textarea>
-            <button onclick="submitSuggestion()" class="btn-blue">Feed into Master Table</button>
-        </div>
         <div class="ledger-box">
-            <h3>Action Research Ledger</h3>
+            <h3>Global Research Ledger</h3>
             <div id="research-feed"></div>
         </div>
     </div>
@@ -62,61 +51,69 @@ HTML_PAGE = '''
         form.onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(form);
-            fetch('/inject_spec', { method: 'POST', body: formData });
-            const eventSource = new EventSource('/progress');
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if(data.layer) {
-                    document.getElementById(data.layer).className = 'layer-box ' + data.state;
-                    document.getElementById(data.layer + '_STATUS').innerText = data.state.toUpperCase();
-                }
-                if(data.research_event) { addEvent(data.research_event); }
-                const log = document.getElementById('log-stream');
-                log.innerHTML += '-> ' + data.msg + "\\n";
-                log.scrollTop = log.scrollHeight;
-                if(data.msg.includes("COMPLETE")) eventSource.close();
-            };
+            const res = await fetch('/start_build', { method: 'POST', body: formData });
+            const { build_id } = await res.json();
+            createBuildCard(build_id);
+            listenToBuild(build_id);
         };
 
-        function addEvent(msg) {
-            const feed = document.getElementById('research-feed');
-            const entry = document.createElement('div');
-            entry.className = 'research-entry';
-            entry.innerHTML = `<span class="event-tag">[EVENT]</span> ${msg}`;
-            feed.prepend(entry);
+        function createBuildCard(id) {
+            const container = document.getElementById('active-builds-container');
+            const card = document.createElement('div');
+            card.className = 'build-card';
+            card.id = 'build-' + id;
+            card.innerHTML = `
+                <strong>Instance: ${id}</strong> <span class="status-tag" id="status-${id}">INITIALIZING</span>
+                <div class="progress-bar"><div id="progress-${id}" class="progress-fill"></div></div>
+                <div id="log-${id}" style="font-family:monospace; font-size:11px; margin-top:10px; color:#57606a;"></div>
+            `;
+            container.prepend(card);
         }
 
-        async function submitSuggestion() {
-            const text = document.getElementById('manualSuggestion').value;
-            if(!text) return;
-            addEvent("MANUAL: " + text);
-            document.getElementById('manualSuggestion').value = '';
-            // Backend storage simulation
-            console.log("Suggestion logged to Master Table:", text);
+        function listenToBuild(id) {
+            const eventSource = new EventSource('/stream/' + id);
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const progress = document.getElementById('progress-' + id);
+                const status = document.getElementById('status-' + id);
+                const log = document.getElementById('log-' + id);
+                
+                progress.style.width = data.percent + '%';
+                status.innerText = data.layer;
+                log.innerHTML = data.msg;
+                
+                if(data.research) {
+                    const feed = document.getElementById('research-feed');
+                    const entry = document.createElement('div');
+                    entry.style.borderBottom = "1px solid #d0d7de";
+                    entry.innerHTML = `<small style="color:#8250df">[${id}]</small> ${data.research}`;
+                    feed.prepend(entry);
+                }
+                if(data.percent >= 100) eventSource.close();
+            };
         }
     </script>
 </body>
 </html>
 '''
 
-@app.route('/inject_spec', methods=['POST'])
-def inject():
-    global build_events
-    build_events = [
-        {"layer": "L1_SPEC", "state": "active", "msg": "Analyzing .txt substrate...", "research_event": "AR-INF-002: Substrate Parity Verified."},
-        {"layer": "L1_SPEC", "state": "completed", "msg": "Spec Ingested.", "research_event": "AR-UI-005: Manual Input Port v2.3.2 Active."},
-        {"layer": "L1_GOV", "state": "active", "msg": "Auditing Supra-MetaRules v5.6...", "research_event": "AR-GOV-001: Truth Discipline Active."},
-        {"layer": "L1_GEN", "state": "active", "msg": "Generating DDL...", "research_event": "AR-GEN-001: SQL Schema Mapping Initiated."},
-        {"layer": "L1_GEN", "state": "completed", "msg": "BUILD COMPLETE.", "research_event": "EVENT: v2.3.2 Integration Succeeded."}
-    ]
-    return "Started", 200
+@app.route('/start_build', methods=['POST'])
+def start_build():
+    build_id = str(uuid.uuid4())[:8]
+    return jsonify({"build_id": build_id}), 200
 
-@app.route('/progress')
-def progress():
+@app.route('/stream/<build_id>')
+def stream(build_id):
     def generate():
-        for event in build_events:
-            yield f"data: {json.dumps(event)}\\n\\n"
-            time.sleep(2.5)
+        steps = [
+            {"layer": "SPEC", "percent": 25, "msg": "Ingesting Substrate...", "research": "Substrate Verified."},
+            {"layer": "GOV", "percent": 50, "msg": "Governance Audit...", "research": "Rules Mapped."},
+            {"layer": "GEN", "percent": 75, "msg": "Generating Schema...", "research": "SQL Initialized."},
+            {"layer": "DONE", "percent": 100, "msg": "BUILD COMPLETE.", "research": "P1 Certification Ready."}
+        ]
+        for step in steps:
+            yield f"data: {json.dumps(step)}\\n\\n"
+            time.sleep(3)
     return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/')

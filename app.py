@@ -1,30 +1,21 @@
 from flask import Flask, request, render_template_string
-from tika import parser
-import os
+import pdfplumber
+import io
 
 app = Flask(__name__)
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html>
-<head>
-    <title>RUFLO UNIVERSAL GATEWAY</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 50px; background: #0d1117; color: #c9d1d9; }
-        .container { max-width: 800px; margin: auto; border: 1px solid #30363d; padding: 30px; border-radius: 12px; background: #161b22; }
-        h1 { color: #58a6ff; }
-        button { background: #238636; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #2ea043; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Ruflo Universal Ingestion</h1>
-        <p>Powered by Apache Tika: The Industrial Standard.</p>
+<head><title>RUFLO FINAL GATEWAY</title></head>
+<body style="font-family:sans-serif; padding:50px; background:#0d1117; color:#c9d1d9;">
+    <div style="max-width:800px; margin:auto; border:1px solid #30363d; padding:30px; border-radius:10px;">
+        <h1>Ruflo Autonomous Ingestion</h1>
+        <p style="color:#58a6ff;">Substrate: Layout-Aware Ingestion Active</p>
         <form action="/inject_spec" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" required style="margin-bottom: 20px;">
-            <br>
-            <button type="submit">START UNIVERSAL INGESTION</button>
+            <input type="file" name="file" accept=".pdf" required>
+            <br><br>
+            <button type="submit" style="background:#238636; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer;">INJECT SPECIFICATION</button>
         </form>
     </div>
 </body>
@@ -38,21 +29,23 @@ def home():
 @app.route('/inject_spec', methods=['POST'])
 def inject():
     file = request.files['file']
-    file_bytes = file.read()
     
-    # Universal Extraction: No more reinventing the wheel.
-    parsed = parser.from_buffer(file_bytes)
-    content = parsed.get("content", "")
-    metadata = parsed.get("metadata", {})
+    # Layout Ingestion: Bypasses CID locks by analyzing the character placement
+    full_text = ""
+    with pdfplumber.open(io.BytesIO(file.read())) as pdf:
+        for page in pdf.pages:
+            # Extract text with horizontal/vertical character mapping
+            text = page.extract_text(x_tolerance=2, y_tolerance=2)
+            if text:
+                full_text += text + "\n"
 
-    if not content or not content.strip():
-        return "<h1>Ingestion Error</h1><p>Tika failed to extract text from the substrate.</p>"
-
+    if not full_text.strip():
+        return "<h1>Error</h1><p>Layout engine returned no text. PDF may be an image.</p>"
+        
     return f'''
     <h1>Ingestion Success</h1>
-    <p>Target Type: {metadata.get('Content-Type', 'Unknown')}</p>
-    <div style="background:#0d1117; color:#7ee787; padding:20px; border:1px solid #30363d; height:500px; overflow-y:scroll; font-family:monospace; white-space:pre-wrap;">
-        {content}
+    <div style="background:#161b22; color:#7ee787; padding:20px; border:1px solid #30363d; height:500px; overflow-y:scroll; font-family:monospace; white-space:pre-wrap;">
+        {full_text[:20000]}
     </div>
     '''
 

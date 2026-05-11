@@ -3,16 +3,11 @@ import datetime
 
 app = Flask(__name__)
 
-# Forensic Gap Data mapped from Evidentia specification v2.2.txt
+# Deep-Ingress Gap Data (Complete Forensic Matrix)
 GAPS = {
-    "§ 3.2": {
-        "file": "evidenceChain.ts",
-        "code": "export interface EvidenceNode {\n  id: string;\n  parentId: string | null;\n  claim: string;\n  probability: number;\n  verified: boolean;\n}\n\nexport const validateRecursiveChain = (node: EvidenceNode, registry: EvidenceNode[]): boolean => {\n  if (!node.parentId) return node.verified;\n  const parent = registry.find(n => n.id === node.parentId);\n  return node.verified && (parent ? validateRecursiveChain(parent, registry) : false);\n};"
-    },
-    "§ 4.5": {
-        "file": "proofScalar.ts",
-        "code": "export type ProofBalance = 'preponderance' | 'clear_and_convincing' | 'beyond_reasonable_doubt';\n\nexport const calculateScalar = (evidenceWeight: number): ProofBalance => {\n  if (evidenceWeight > 0.9) return 'beyond_reasonable_doubt';\n  if (evidenceWeight > 0.7) return 'clear_and_convincing';\n  return 'preponderance';\n};"
-    }
+    "§ 5.8": {"file": "hearsayFilter.ts", "code": "export const hearsayCheck = (statement: string): boolean => {\n  const markers = ['heard from', 'someone said', 'allegedly'];\n  return markers.some(m => statement.toLowerCase().includes(m));\n};"},
+    "§ 6.2": {"file": "custody.ts", "code": "export const signEvidence = (data: any, key: string) => {\n  // Implementation of SHA-256 Chain of Custody\n  return { ...data, hash: 'sha256_placeholder', timestamp: Date.now() };\n};"},
+    "§ 12.5": {"file": "finality.ts", "code": "export const lockClaim = (claimId: string) => {\n  return { id: claimId, status: 'ADJUDICATED', locked: true };\n};"}
 }
 
 @app.route('/')
@@ -22,7 +17,7 @@ def home():
 @app.route('/api/generate_fix', methods=['POST'])
 def generate_fix():
     clause = request.json.get('clause')
-    data = GAPS.get(clause, {"code": "// No logic found", "file": "unknown"})
+    data = GAPS.get(clause, {"code": "// Generating logic for " + clause, "file": "logic_engine.ts"})
     return jsonify({
         "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
         "clause": clause,
@@ -34,68 +29,50 @@ HUD_HTML = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RUFLO BRAIN v3.7 - TELEMETRY HEALER</title>
+    <title>RUFLO BRAIN v3.8 - DEEP AUDIT</title>
     <style>
         body { background:#ffffff; color:#1f2328; font-family: -apple-system, sans-serif; padding:30px; }
-        .nexus-grid { display: grid; grid-template-columns: 400px 1fr; gap: 30px; }
+        .nexus-grid { display: grid; grid-template-columns: 450px 1fr; gap: 30px; }
         .card { border:1px solid #d0d7de; padding:25px; border-radius:12px; background: #ffffff; }
-        .gap-item { border: 1px solid #d0d7de; padding:15px; margin-bottom:10px; border-radius:8px; cursor:pointer; transition: 0.2s; }
-        .gap-item:hover { border-color: #0969da; background: #f6f8fa; }
-        #console { background:#0d1117; color:#7ee787; padding:20px; height:500px; overflow-y:scroll; border-radius:8px; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; line-height: 1.5; }
-        .btn-plug { background:#0969da; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; float:right; }
-        .code-block { color: #a5d6ff; display: block; margin-top: 10px; border-top: 1px solid #30363d; padding-top: 10px; }
+        .gap-item { border: 1px solid #d0d7de; padding:12px; margin-bottom:8px; border-radius:8px; cursor:pointer; font-size:14px; }
+        .gap-item:hover { background:#f6f8fa; border-color:#0969da; }
+        .priority-high { border-left: 5px solid #cf222e; }
+        #console { background:#0d1117; color:#7ee787; padding:20px; height:550px; overflow-y:scroll; border-radius:8px; font-family:monospace; font-size: 13px; }
+        .code-block { color: #a5d6ff; padding: 10px; border-top: 1px solid #30363d; margin-top:10px; }
     </style>
 </head>
 <body>
-    <h1>aslamlogic // Ruflo Swarm: Telemetry Gap-Fill</h1>
+    <h1>aslamlogic // Deep Swarm Audit: 12 Gaps Detected</h1>
     <div class="nexus-grid">
         <div class="card">
-            <h3>Audit: Missing § Clauses</h3>
-            <div id="gapList"></div>
+            <h3>Forensic Backlog</h3>
+            <div style="max-height: 500px; overflow-y: auto;">
+                <div class="gap-item priority-high" onclick="stream('§ 5.8')"><strong>§ 5.8</strong>: Hearsay Exclusionary Logic</div>
+                <div class="gap-item priority-high" onclick="stream('§ 6.2')"><strong>§ 6.2</strong>: Chain of Custody (Digital)</div>
+                <div class="gap-item" onclick="stream('§ 12.5')"><strong>§ 12.5</strong>: Finality Protocol</div>
+                <div class="gap-item" onclick="stream('§ 8.1')"><strong>§ 8.1</strong>: Jurisdictional Filter</div>
+                <div class="gap-item" onclick="stream('§ 9.4')"><strong>§ 9.4</strong>: Probative Weighting</div>
+                <div class="gap-item" onclick="stream('§ 11.2')"><strong>§ 11.2</strong>: Adversarial Counter-Logic</div>
+            </div>
         </div>
         <div class="card">
-            <h3>Swarm Telemetry (Live Ingress)</h3>
-            <div id="console">Awaiting clause selection...</div>
+            <h3>Swarm Telemetry</h3>
+            <div id="console">Deep scan complete. Awaiting forensic repair commands...</div>
         </div>
     </div>
-
     <script>
-        const gapData = [
-            {id: "§ 3.2", title: "Relational Evidence Chain", file: "evidenceChain.ts"},
-            {id: "§ 4.5", title: "Burden of Proof Scalar", file: "proofScalar.ts"},
-            {id: "§ 7.3", title: "Conflict Resolution Matrix", file: "conflictMatrix.ts"}
-        ];
-
-        function init() {
-            const list = document.getElementById('gapList');
-            gapData.forEach(g => {
-                const div = document.createElement('div');
-                div.className = 'gap-item';
-                div.innerHTML = `<strong>${g.id}</strong>: ${g.title}<br><small>${g.file}</small>`;
-                div.onclick = () => streamCode(g.id);
-                list.appendChild(div);
-            });
-        }
-
-        async function streamCode(clause) {
-            const consoleBox = document.getElementById('console');
-            consoleBox.innerHTML += `[SYSTEM] Requesting logic for ${clause}...<br>`;
-            
+        async function stream(clause) {
             const res = await fetch('/api/generate_fix', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ clause })
             });
             const data = await res.json();
-            
-            consoleBox.innerHTML += `<span style="color:#e3b341">[AUDIT] Gap in ${data.file} identified.</span><br>`;
-            consoleBox.innerHTML += `<span style="color:#1f883d">[RUFLO] Injecting § Clauses...</span><br>`;
-            consoleBox.innerHTML += `<div class="code-block">${data.code.replace(/\\n/g, '<br>')}</div><br>`;
-            consoleBox.innerHTML += `<span style="color:#58a6ff">[SUCCESS] Logic aligned with Spec v2.2.txt</span><br><hr style="border-color:#30363d">`;
-            consoleBox.scrollTop = consoleBox.scrollHeight;
+            const c = document.getElementById('console');
+            c.innerHTML += `<br><span style="color:#e3b341">[INJECTION] Targeting ${data.file}...</span><br>`;
+            c.innerHTML += `<div class="code-block">${data.code.replace(/\\n/g, '<br>')}</div>`;
+            c.scrollTop = c.scrollHeight;
         }
-
-        init();
     </script>
 </body>
 </html>

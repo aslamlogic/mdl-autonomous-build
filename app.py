@@ -3,26 +3,20 @@ import datetime
 
 app = Flask(__name__)
 
-@app.route('/api/forensic_compare', methods=['POST'])
-def compare():
-    # Simulation based on Knowledge Unit Protocol v1.5 structural rules
-    case_data = request.json.get('data', '')
+# Forensic Validation Layer: LWP v1.4 Variant of SMR v5.6
+@app.route('/api/validate_legal_output', methods=['POST'])
+def validate():
+    data = request.json
+    # Validation Criteria per LWP Section 10.2
+    is_evidence_linked = data.get('has_citation', False) # [cite: 242]
+    is_non_advisory = not data.get('makes_decision', True) # [cite: 245]
+    is_structured = data.get('is_structured', False) # [cite: 232]
     
-    # 1. Swarm Heuristic
-    swarm_complexity = len(case_data.split()) / 500 # Simple word count logic
-    
-    # 2. Protocol Forensic (Simulated extraction of discrete claims)
-    normative_kus = 18  # Extracted § Clauses from Spec v2.2
-    empirical_kus = 12  # Extracted facts from Case
-    ratio = normative_kus / empirical_kus
-    protocol_complexity = (ratio * 10) / 2 # KUP v1.5 weighted scalar
+    status = "VALIDATED" if (is_evidence_linked and is_non_advisory and is_structured) else "REJECTED"
     
     return jsonify({
         "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
-        "swarm_score": round(swarm_complexity, 1),
-        "protocol_score": round(protocol_complexity, 1),
-        "tier": "EXPERT" if ratio > 0.6 else "PROFESSIONAL",
-        "model": "GPT-4o (Frontier)" if ratio > 0.6 else "Sonnet 3.5"
+        "protocol": "LWP v1.4 (Subordinate to SMR v5.6)",
+        "status": status,
+        "action": "Proceed to Expert Tier" if status == "VALIDATED" else "Halt Output"
     })
-
-# ... HUD Template with Comparison Graphs ...

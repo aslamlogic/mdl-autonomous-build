@@ -1,74 +1,108 @@
 from flask import Flask, render_template_string, jsonify, request
-import os, json, datetime
+import datetime
 
 app = Flask(__name__)
-# Forensic Target from image_44fa4f.png
-REPO_CONTEXT = "evidentia-app"
+
+# Forensic Context
+KNOWN_REPOS = ["evidentia-app"]
+SPEC_FILE = "Evidentia specification v2.2.txt"
 
 @app.route('/')
 def home():
     return render_template_string(HUD_HTML)
 
-@app.route('/api/swarm_command', methods=['POST'])
-def swarm_command():
-    # Command Rufus to target the specific repo path from image_5052fe.png
+@app.route('/api/execute_mode', methods=['POST'])
+def execute_mode():
+    data = request.json
+    mode = data.get('mode')
+    repo = data.get('repo', 'New-Build-Context')
+    
+    logs = []
+    if mode == "repair":
+        logs = [
+            f"Tethering to existing repo: {repo}",
+            f"Ingesting {SPEC_FILE} for gap analysis...",
+            "Forensic Audit: Identifying missing § clauses in /src...",
+            "Ruflo Swarm: Plugging gaps in Legal Reasoning Engine."
+        ]
+    else:
+        logs = [
+            "Initializing Fresh Substrate...",
+            f"Mapping {SPEC_FILE} to new database schema...",
+            "Generating core TypeScript boilerplate...",
+            "Deploying fresh build to Render lab."
+        ]
+        
     return jsonify({
         "timestamp": datetime.datetime.now().strftime('%H:%M:%S'),
-        "repo": REPO_CONTEXT,
-        "action": "Gap-Fill Ingress Active",
-        "logs": [
-            "Scanning existing TypeScript substrate...",
-            "Comparing against v2.2 PDF specification...",
-            "Detected missing Legal Rule Engine schemas.",
-            "Ruflo: Generating hotfix for /src/logic/engine.ts..."
-        ]
+        "mode": mode,
+        "logs": logs
     })
 
 HUD_HTML = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RUFLO BRAIN - FORENSIC GAP-FILL</title>
+    <title>RUFLO BRAIN v3.5 - BIMODAL HUD</title>
     <style>
         body { background:#ffffff; color:#1f2328; font-family: -apple-system, sans-serif; padding:40px; }
-        .nexus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-        .card { border:1px solid #d0d7de; padding:30px; border-radius:12px; background: #ffffff; }
-        .layer { border-left: 10px solid #d0d7de; background: #f6f8fa; padding:20px; margin:10px 0; font-weight:bold; }
-        .active { border-left-color: #0969da; background: #ddf4ff; }
-        .completed { border-left-color: #1a7f37; background: #dafbe1; }
-        #log-stream { background:#0d1117; color:#7ee787; padding:20px; height:300px; overflow-y:scroll; border-radius:8px; font-family:monospace; }
-        .btn { background:#0969da; color:white; padding:15px; border:none; border-radius:8px; width:100%; font-weight:bold; cursor:pointer; }
+        .nexus-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+        .card { border:1px solid #d0d7de; padding:35px; border-radius:12px; background: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .mode-btn { padding: 20px; font-size: 18px; font-weight: bold; border-radius: 10px; border: none; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 15px; }
+        .btn-anew { background: #1f883d; color: white; }
+        .btn-repair { background: #0969da; color: white; }
+        #console { background:#0d1117; color:#7ee787; padding:20px; height:350px; overflow-y:scroll; border-radius:8px; font-family:monospace; margin-top: 20px; font-size: 14px; }
+        .spec-tag { background: #f6f8fa; padding: 10px; border: 1px solid #d0d7de; border-radius: 6px; font-weight: bold; display: block; margin-bottom: 20px; }
     </style>
 </head>
 <body>
-    <h1 style="border-bottom: 2px solid #eaeef2; padding-bottom: 20px;">aslamlogic // Ruflo Swarm: Gap-Fill Mode</h1>
+    <div style="border-bottom: 2px solid #eaeef2; margin-bottom: 30px; padding-bottom: 20px;">
+        <h1>aslamlogic // Ruflo Central Brain v3.5</h1>
+        <span class="spec-tag">Source: Evidentia specification v2.2.txt</span>
+    </div>
+
     <div class="nexus-grid">
         <div class="card">
-            <h3>Target: aslamlogic/evidentia-app</h3>
-            <div id="L1" class="layer">AUDIT EXISTING CODEBASE <span id="s1" style="float:right">WAITING</span></div>
-            <div id="L2" class="layer">INGEST SPEC v2.2 PDF <span id="s2" style="float:right">WAITING</span></div>
-            <div id="L3" class="layer">INJECT MISSING LOGIC <span id="s3" style="float:right">WAITING</span></div>
-            <button onclick="executeSwarm()" class="btn">EXECUTE FORENSIC AUDIT & GAP-FILL</button>
+            <h2>Select Operation Mode</h2>
+            
+            <div style="margin-bottom: 30px;">
+                <p><strong>Path A:</strong> Initialize a brand new repository from the specification text.</p>
+                <button onclick="run('anew')" class="mode-btn btn-anew">BUILD ANEW</button>
+            </div>
+            <hr>
+            <div style="margin-top: 30px;">
+                <p><strong>Path B:</strong> Audit and plug gaps in a previously existing repository.</p>
+                <select id="repoSelect" style="width:100%; padding:15px; border-radius:8px; margin-bottom:15px;">
+                    <option value="evidentia-app">Target: aslamlogic/evidentia-app</option>
+                </select>
+                <button onclick="run('repair')" class="mode-btn btn-repair">REPAIR / UPDATE REPO</button>
+            </div>
         </div>
+
         <div class="card">
-            <h3>Swarm Telemetry</h3>
-            <div id="log-stream">Ready for forensic ingress...</div>
+            <h2>Swarm Telemetry</h2>
+            <div id="console">Awaiting mode selection...</div>
         </div>
     </div>
+
     <script>
-        async function executeSwarm() {
-            const stream = document.getElementById('log-stream');
-            const res = await fetch('/api/swarm_command', {method:'POST'});
+        async function run(mode) {
+            const consoleBox = document.getElementById('console');
+            const repo = document.getElementById('repoSelect').value;
+            consoleBox.innerHTML = `[SYSTEM] Mode: ${mode.toUpperCase()} initiated...<br>`;
+            
+            const res = await fetch('/api/execute_mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ mode, repo })
+            });
             const data = await res.json();
             
-            document.getElementById('L1').className = 'layer active';
             data.logs.forEach((log, i) => {
                 setTimeout(() => {
-                    stream.innerHTML += `[${data.timestamp}] ${log}<br>`;
-                    stream.scrollTop = stream.scrollHeight;
-                    if(i === 1) document.getElementById('L2').className = 'layer active';
-                    if(i === 3) document.getElementById('L3').className = 'layer active';
-                }, i * 2000);
+                    consoleBox.innerHTML += `[${data.timestamp}] ${log}<br>`;
+                    consoleBox.scrollTop = consoleBox.scrollHeight;
+                }, i * 1500);
             });
         }
     </script>

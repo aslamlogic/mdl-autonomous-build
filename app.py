@@ -1,48 +1,50 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, render_template_string
+import fitz  # Ruflo Engine
 import os
-import fitz  # Ruflo PDF Parsing Engine
-from controller import load_spec, load_smr, build_evidentia
-from registry_service import registry
 
 app = Flask(__name__)
 
-def ruflo_extract(file_path):
-    """Internal Ruflo logic to convert PDF binary to technical text."""
-    doc = fitz.open(file_path)
-    return "".join([page.get_text() for page in doc])
+# The Visual Interface
+HTML_PAGE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FIS Nexus Drop Zone</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; }
+        .drop-zone { border: 2px dashed #007bff; padding: 40px; border-radius: 10px; width: 300px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>FIS Nexus Drop Zone</h1>
+    <div class="drop-zone">
+        <form action="/inject_spec" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf" required>
+            <br><br>
+            <button type="submit" style="padding: 10px 20px; cursor: pointer;">Inject PDF</button>
+        </form>
+    </div>
+</body>
+</html>
+'''
+
+@app.route('/')
+def home():
+    return render_template_string(HTML_PAGE)
 
 @app.route('/inject_spec', methods=['POST'])
-def inject_spec():
-    try:
-        # Scenario A: File Drop (PDF)
-        if 'file' in request.files:
-            file = request.files['file']
-            save_path = f"raw_{file.filename}"
-            file.save(save_path)
-            content = ruflo_extract(save_path)
+def inject():
+    if 'file' not in request.files:
+        return "No file uploaded", 400
+    file = request.files['file']
+    
+    # Ruflo Extraction
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text()
         
-        # Scenario B: Manual Text/JSON Ingestion
-        else:
-            data = request.get_json(silent=True) or {}
-            content = data.get('specification', request.form.get('specification', ''))
-        
-        if not content:
-            return jsonify({"status": "ERROR", "message": "No specification data detected."}), 400
-
-        # Create the 'Truth Source' file for the controller
-        spec_filename = "active_specification.txt"
-        with open(spec_filename, "w") as f:
-            f.write(content)
-        
-        # Trigger Factory Build
-        registry.verify_authority("2.2")
-        load_spec(spec_filename)
-        load_smr()
-        result = build_evidentia()
-        
-        return jsonify({"status": "SUCCESS", "message": "Evidentia Build Authorized via Ruflo", "trace": result}), 200
-    except Exception as e:
-        return jsonify({"status": "ERROR", "message": str(e)}), 400
+    return f"<h1>Ruflo Success</h1><p>Extracted {len(text)} characters from Evidentia Spec.</p><pre>{text[:2000]}...</pre>"
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host='0.0.0.0', port=10000)

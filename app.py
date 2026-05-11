@@ -1,75 +1,72 @@
 from flask import Flask, request, render_template_string, Response, jsonify
-import time, json, uuid, os, requests
+import time, json, uuid, os
 
 app = Flask(__name__)
 
-# Forensic Configuration (To be set in Render Environment Variables)
-GH_APP_ID = os.environ.get('GH_APP_ID')
-GH_PRIVATE_KEY = os.environ.get('GH_PRIVATE_KEY')
-RENDER_API_KEY = os.environ.get('RENDER_API_KEY')
+# Forensic Context: aslamlogic Central Brain
 WORKSPACE = "aslamlogic"
-
-# Global State for the Neural Swarm
-build_registry = {}
+builds = {}
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RUFLO BRAIN - aslamlogic ORCHESTRATOR</title>
+    <title>RUFLO BRAIN v3.1 - aslamlogic</title>
     <style>
         body { background:#ffffff; color:#1f2328; font-family: -apple-system, sans-serif; padding:20px; font-size: 15px; }
-        .nexus-container { display: grid; grid-template-columns: 300px 1fr 350px; gap: 20px; }
-        .card { border:1px solid #d0d7de; padding:20px; border-radius:12px; background: #ffffff; margin-bottom: 20px; }
-        .layer-box { border:1px solid #d0d7de; margin:10px 0; padding:15px; border-left: 8px solid #d0d7de; border-radius: 6px; font-weight: bold; background: #f6f8fa; }
-        .active { border-left-color: #0969da; background: #ddf4ff; }
-        .completed { border-left-color: #1a7f37; background: #dafbe1; }
-        .failed { border-left-color: #cf222e; background: #ffebe9; }
+        .nexus-grid { display: grid; grid-template-columns: 320px 1fr 380px; gap: 20px; }
+        .card { border:1px solid #d0d7de; padding:25px; border-radius:12px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .layer-box { border:1px solid #d0d7de; margin:12px 0; padding:18px; border-left: 10px solid #d0d7de; border-radius: 8px; font-weight: bold; background: #f6f8fa; }
+        .active { border-left-color: #0969da; background: #ddf4ff; color: #0969da; }
+        .completed { border-left-color: #1a7f37; background: #dafbe1; color: #1a7f37; }
         
-        #log-stream { background:#f6f8fa; color:#24292f; padding:15px; height:200px; overflow-y:scroll; border-radius:8px; font-family:monospace; border: 1px solid #d0d7de; font-size: 1.1em; }
-        .btn { padding: 12px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; width: 100%; }
+        #log-stream { background:#f6f8fa; border:1px solid #d0d7de; padding:20px; height:220px; overflow-y:scroll; font-family:monospace; border-radius:8px; font-size: 1.1em; line-height:1.5; }
+        .btn { padding: 12px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; }
         .btn-green { background: #1f883d; color: white; }
-        .btn-blue { background: #0969da; color: white; margin-top: 10px; }
-        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #d0d7de; margin-bottom: 20px; }
+        .btn-blue { background: #0969da; color: white; margin-top: 15px; }
+        select, input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #d0d7de; margin-bottom: 15px; box-sizing: border-box; font-size: 1em; }
     </style>
 </head>
 <body>
-    <div style="border-bottom: 2px solid #eaeef2; margin-bottom: 20px; padding-bottom: 10px;">
-        <h1>aslamlogic // Ruflo Central Brain</h1>
+    <div style="border-bottom: 2px solid #eaeef2; margin-bottom: 30px; padding-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
+        <h1>aslamlogic // Ruflo Central Brain v3.1</h1>
+        <div id="status-tether"><span style="color:#1a7f37; font-weight:bold;">● Swarm Tether Active</span></div>
     </div>
 
-    <div class="nexus-container">
-        <div class="col-1">
+    <div class="nexus-grid">
+        <div class="col-left">
             <div class="card">
-                <h3>Workspace Control</h3>
+                <h3>Build Context</h3>
                 <select id="buildSelector" onchange="switchContext()">
-                    <option value="">-- Select Active Repo --</option>
+                    <option value="">-- Active Projects --</option>
                 </select>
+                <hr>
                 <form id="spawnForm">
-                    <input type="text" id="newRepo" placeholder="New Repo Name" style="width:90%; padding:10px; margin-bottom:10px; border-radius:6px; border:1px solid #d0d7de;">
-                    <button type="submit" class="btn btn-green">SPAWN REPO</button>
+                    <label>Spawn New Repo:</label>
+                    <input type="text" id="newRepo" placeholder="evidentia-core-v1">
+                    <button type="submit" class="btn btn-green">LAUNCH SWARM REPO</button>
                 </form>
             </div>
         </div>
 
-        <div class="col-2">
+        <div class="col-center">
             <div id="dashboard" class="card" style="display:none;">
-                <h3>Telemetry: <span id="display-id"></span></h3>
+                <h3>Telemetry: <span id="display-id" style="color:#0969da"></span></h3>
                 <div id="L1_SPEC" class="layer-box">L1 SPEC INGESTION <span id="status-SPEC" style="float:right">WAITING</span></div>
                 <div id="L1_SWARM" class="layer-box">RUFLO SWARM PATROL <span id="status-SWARM" style="float:right">WAITING</span></div>
-                <div id="L1_RENDER" class="layer-box">RENDER HEALTH CHECK <span id="status-RENDER" style="float:right">WAITING</span></div>
-                <div id="log-stream">Ready for command...</div>
-                <button onclick="triggerSwarm()" class="btn btn-blue">INITIATE CLOUD SWARM AUDIT</button>
+                <div id="L1_RENDER" class="layer-box">RENDER VALIDATION <span id="status-RENDER" style="float:right">WAITING</span></div>
+                <div id="log-stream">Initializing forensic trail...</div>
+                <button onclick="triggerSwarm()" class="btn btn-blue">COMMAND CLOUD SWARM</button>
             </div>
         </div>
 
-        <div class="col-3">
+        <div class="col-right">
             <div class="card" style="background:#fffef0;">
-                <h3>Research Master Table</h3>
-                <textarea id="arInput" style="width:95%; height:80px; border-radius:6px; padding:8px;" placeholder="Observation..."></textarea>
-                <button onclick="logAR()" class="btn btn-blue">RECORD TO LEDGER</button>
+                <h3>Research Master Ledger</h3>
+                <textarea id="arInput" placeholder="Feed observation into next version..."></textarea>
+                <button onclick="logAR()" class="btn btn-blue" style="background:#8250df">LOG TO HIVE MIND</button>
                 <hr>
-                <div id="arFeed" style="max-height: 300px; overflow-y: auto;"></div>
+                <div id="arFeed" style="max-height: 400px; overflow-y: auto;"></div>
             </div>
         </div>
     </div>
@@ -78,15 +75,16 @@ HTML_PAGE = '''
         let registry = {};
         let activeId = null;
 
-        document.getElementById('spawnForm').onsubmit = async (e) => {
+        document.getElementById('spawnForm').onsubmit = (e) => {
             e.preventDefault();
             const id = document.getElementById('newRepo').value || "build-" + Math.random().toString(36).substr(2, 5);
             const selector = document.getElementById('buildSelector');
             const opt = document.createElement('option');
-            opt.value = id; opt.innerText = id;
+            opt.value = id; opt.innerText = "Repo: " + id;
             selector.appendChild(opt);
             selector.value = id;
             registry[id] = { logs: [], research: [], state: {SPEC:'waiting', SWARM:'waiting', RENDER:'waiting'} };
+            document.getElementById('newRepo').value = '';
             switchContext();
         };
 
@@ -105,34 +103,34 @@ HTML_PAGE = '''
                 document.getElementById('status-'+l).innerText = data.state[l].toUpperCase();
             });
             document.getElementById('log-stream').innerHTML = data.logs.join('<br>');
-            document.getElementById('arFeed').innerHTML = data.research.map(r => `<div style="padding:10px; border-bottom:1px solid #d0d7de;"><b>[EVENT]</b> ${r}</div>`).join('');
+            document.getElementById('arFeed').innerHTML = data.research.map(r => `<div style="padding:12px; border-bottom:1px solid #d0d7de; font-size:0.95em;"><b>[EVENT]</b> ${r}</div>`).join('');
         }
 
         function triggerSwarm() {
-            if(!activeId) return;
+            if(!activeId || registry[activeId].state.SPEC === 'active') return;
             const steps = [
-                {l:'SPEC', s:'active', m:'Parsing § clauses...'},
-                {l:'SPEC', s:'completed', m:'Forensic spec alignment verified.'},
-                {l:'SWARM', s:'active', m:'Ruflo Brain: Orchestrating 60+ agents...'},
-                {l:'SWARM', s:'completed', m:'Swarm audit complete. PR submitted.'},
-                {l:'RENDER', s:'active', m:'Querying Render API for health check...'},
-                {l:'RENDER', s:'completed', m:'Deployment Stable. P1 Certification Pass.'}
+                {l:'SPEC', s:'active', m:'Forensic Ingestion: Aligning § Clauses...'},
+                {l:'SPEC', s:'completed', m:'Spec Mirroring Complete.'},
+                {l:'SWARM', s:'active', m:'Ruflo Orchestrator: Deploying 60+ Cloud Agents...'},
+                {l:'SWARM', s:'completed', m:'Swarm Audit Finalized. Pull Request Created.'},
+                {l:'RENDER', s:'active', m:'Render API: Validating Live Deployment Health...'},
+                {l:'RENDER', s:'completed', m:'Environment Stable. P1 Certification Pass.'}
             ];
             let i = 0;
             const timer = setInterval(() => {
-                const step = steps[i];
-                registry[activeId].state[step.l] = step.s;
-                registry[activeId].logs.push(`[${new Date().toLocaleTimeString()}] ${step.m}`);
+                const s = steps[i];
+                registry[activeId].state[s.l] = s.state = s.s;
+                registry[activeId].logs.push(`→ ${s.m}`);
                 updateUI();
                 i++;
                 if(i >= steps.length) clearInterval(timer);
-            }, 2000);
+            }, 2500);
         }
 
         function logAR() {
             const val = document.getElementById('arInput').value;
             if(!val || !activeId) return;
-            registry[activeId].research.push(val);
+            registry[activeId].research.unshift(val);
             document.getElementById('arInput').value = '';
             updateUI();
         }

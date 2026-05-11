@@ -1,4 +1,5 @@
 flask
 gunicorn
 pymupdf
-pdfplumber
+pytesseract
+pdf2image

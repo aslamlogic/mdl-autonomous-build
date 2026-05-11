@@ -1,21 +1,27 @@
 from flask import Flask, request, render_template_string
 import fitz
+import pdfplumber
 import os
+import requests
 
 app = Flask(__name__)
+
+# THE TETHER: Connecting the Swarm to the Cloud
+RENDER_KEY = os.getenv('RENDER_API_KEY')
+GITHUB_APP_TOKEN = os.getenv('GITHUB_TOKEN')
 
 HTML_PAGE = '''
 <!DOCTYPE html>
 <html>
-<head><title>FIS Nexus Drop Zone</title></head>
-<body style="font-family:sans-serif; padding:50px; background-color:#f8f9fa;">
-    <div style="max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        <h1>FIS Nexus Drop Zone</h1>
-        <p>Windows Environment Active</p>
+<head><title>RUFLO MASTER ORCHESTRATOR</title></head>
+<body style="font-family:sans-serif; padding:50px; background:#0d1117; color:#c9d1d9;">
+    <div style="max-width:800px; margin:auto; border:1px solid #30363d; padding:30px; border-radius:10px;">
+        <h1>Ruflo Autonomous Nexus</h1>
+        <p style="color:#8b949e;">Status: Tethered | Environment: Multi-Agent Ready</p>
         <form action="/inject_spec" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".pdf" required style="margin-bottom: 20px;">
-            <br>
-            <button type="submit" style="background:#007bff; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer;">Inject PDF</button>
+            <input type="file" name="file" accept=".pdf" required>
+            <br><br>
+            <button type="submit" style="background:#238636; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:bold;">INITIALIZE SWARM INGESTION</button>
         </form>
     </div>
 </body>
@@ -28,22 +34,35 @@ def home():
 
 @app.route('/inject_spec', methods=['POST'])
 def inject():
-    if 'file' not in request.files:
-        return "No file detected", 400
-    
     file = request.files['file']
-    stream = file.read()
+    file_bytes = file.read()
     
-    # Ruflo Extraction with explicit text flag
-    doc = fitz.open(stream=stream, filetype="pdf")
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text("text")
-        
-    if not full_text.strip():
-        return "<h1>Error</h1><p>Ruflo found NO text layer. This PDF may be a scanned image.</p>"
-        
-    return f"<h1>Ruflo Success</h1><p>Extracted {len(full_text)} characters.</p><pre style='background:#eeeeee; padding:20px; white-space: pre-wrap;'>{full_text[:5000]}</pre>"
+    # AGENT 1: Standard Scraper (PyMuPDF)
+    text = ""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        for page in doc:
+            text += page.get_text("text")
+    except:
+        pass
+
+    # AGENT 2: The Evaluator (Detecting "Squares" or Encoding Errors)
+    # If text is empty or contains non-English garbage, trigger Self-Healing
+    if len(text.strip()) < 50 or "" in text or not any(c.isalpha() for c in text[:100]):
+        print("SWARM ALERT: Encoding failure detected. Switching to Agent 3 (pdfplumber)...")
+        # AGENT 3: The Repair Scraper (Handles CID/Non-Standard Fonts)
+        with pdfplumber.open(request.files['file']) as pdf:
+            text = ""
+            for page in pdf.pages:
+                text += page.extract_text() or ""
+
+    return f'''
+    <h1>Ruflo Transformation Engine</h1>
+    <p>Success Level: Self-Healed</p>
+    <div style="background:#161b22; color:#58a6ff; padding:20px; border:1px solid #30363d; height:500px; overflow-y:scroll; font-family:monospace;">
+        {text[:10000] if text else "FATAL: All agents failed to read text layer. PDF is likely an image scan."}
+    </div>
+    '''
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)

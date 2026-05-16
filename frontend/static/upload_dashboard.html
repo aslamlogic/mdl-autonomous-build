@@ -1,32 +1,75 @@
-<!DOCTYPE html><html><head><meta charset="UTF-8"><title>MDL FACTORY</title><style>
-body { background: #071024; color: #e6f3f5; font-family: sans-serif; padding: 20px; }
-.card { background: #0b1530; padding: 20px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
-button { background: #00b4a6; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-pre { background: #02131a; padding: 10px; height: 300px; overflow: auto; border-radius: 5px; color: #00ffcc; border: 1px solid #111; }
-</style></head><body>
-<h1>MDL Autonomous Factory v2.2.1</h1>
-<div class="card"><h3>Upload Specification</h3><input type="file" id="f" multiple><input type="text" id="t" placeholder="Build Title"><button onclick="run()">BUILD SYSTEM</button></div>
-<div class="card" id="bl"></div><div class="card"><pre id="lp">System Idle...</pre></div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDL Autonomous Factory – Build Dashboard</title>
+    <style>
+        body { font-family: monospace; background: #0a0a0a; color: #0f0; margin: 2rem; }
+        .container { max-width: 1200px; margin: auto; }
+        .project-selector { margin-bottom: 2rem; }
+        button { background: #0a0; color: #000; border: none; padding: 0.5rem 1rem; cursor: pointer; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        pre { background: #111; padding: 1rem; overflow-x: auto; border: 1px solid #0f0; }
+        .status { margin-top: 1rem; padding: 0.5rem; background: #111; border-left: 4px solid #0f0; }
+        .error { border-left-color: #f00; color: #f66; }
+        .logs { margin-top: 2rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🏭 MDL Autonomous Factory – Build Dashboard</h1>
+    <div class="project-selector">
+        <label for="project">Project: </label>
+        <select id="project">
+            <option value="evidentia">Evidentia (Legal Reasoning System)</option>
+            <option value="paios">PAIOS (Personal AI OS)</option>
+        </select>
+        <button id="buildBtn">▶ Build Selected Project</button>
+    </div>
+    <div id="buildStatus" class="status">Ready. Select a project and click Build.</div>
+    <div class="logs">
+        <h3>Build Logs</h3>
+        <pre id="buildLogs">(No build started yet)</pre>
+    </div>
+</div>
 <script>
-async function run() {
-    const fd = new FormData();
-    for(let file of document.getElementById('f').files) fd.append('files', file);
-    fd.append('title', document.getElementById('t').value);
-    const r = await fetch('/upload-spec', {method:'POST', body:fd});
-    const d = await r.json(); track(d.build_id);
-}
-function track(id) {
-    const es = new EventSource(`/builds/${id}/events`);
-    document.getElementById('lp').innerText = `Tracking Build: ${id}\n`;
-    es.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        document.getElementById('lp').innerText += `> ${data.msg}\n`;
-        document.getElementById('lp').scrollTop = document.getElementById('lp').scrollHeight;
-    };
-}
-async function lb() {
-    const r = await fetch('/builds'); const d = await r.json();
-    document.getElementById('bl').innerHTML = d.map(b => `<p>${b.title} [${b.status}] <button onclick="track('${b.id}')">TRACK</button></p>`).join('');
-}
-setInterval(lb, 5000); lb();
-</script></body></html>
+    const buildBtn = document.getElementById('buildBtn');
+    const projectSelect = document.getElementById('project');
+    const statusDiv = document.getElementById('buildStatus');
+    const logsPre = document.getElementById('buildLogs');
+
+    async function triggerBuild(project) {
+        buildBtn.disabled = true;
+        statusDiv.innerHTML = `⏳ Triggering build for ${project}...`;
+        statusDiv.classList.remove('error');
+        logsPre.innerText = 'Waiting for build response...';
+
+        try {
+            const response = await fetch(`/api/build/${project}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (!response.ok || data.returncode !== 0) {
+                throw new Error(data.stderr || data.error || `Build failed with code ${data.returncode}`);
+            }
+            statusDiv.innerHTML = `✅ Build completed for ${project} (returncode ${data.returncode})`;
+            logsPre.innerText = data.stdout || '(No stdout)';
+            if (data.stderr) logsPre.innerText += '\n--- STDERR ---\n' + data.stderr;
+        } catch (err) {
+            statusDiv.innerHTML = `❌ Build error: ${err.message}`;
+            statusDiv.classList.add('error');
+            logsPre.innerText = err.stack || err.message;
+        } finally {
+            buildBtn.disabled = false;
+        }
+    }
+
+    buildBtn.addEventListener('click', () => {
+        const project = projectSelect.value;
+        triggerBuild(project);
+    });
+</script>
+</body>
+</html>
